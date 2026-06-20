@@ -20,8 +20,6 @@ import subprocess
 import sys
 import tempfile
 
-from datasets import load_dataset
-
 CLAUDE = "/home/neo/.local/bin/claude"
 DATASET = "princeton-nlp/SWE-bench_Verified"
 PREDS = "/home/neo/seif/logos/preds"
@@ -32,6 +30,7 @@ _DS = None
 def get_instance(iid):
     global _DS
     if _DS is None:
+        from datasets import load_dataset
         _DS = {x["instance_id"]: x for x in load_dataset(DATASET, split="test")}
     if iid not in _DS:
         raise SystemExit(f"instance {iid} not found")
