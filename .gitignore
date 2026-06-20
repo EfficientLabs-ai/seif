@@ -1,0 +1,4 @@
+phase0/
+*.env
+.env
+secrets/

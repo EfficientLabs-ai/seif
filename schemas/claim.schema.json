@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seif.efficientlabs.ai/schemas/claim.schema.json",
+  "title": "SEIF Claim",
+  "description": "A single assertion about reality with four INDEPENDENT truth axes + bi-temporal validity. Supersedes the legacy two-axis tagging. No agent may promote VISION->CLAIM on linguistic confidence; the transition requires evidence + passed verification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "statement", "reality_state", "truth_class", "epistemic_status", "verification_status", "valid_time", "recorded_time", "evidence", "actor"],
+  "properties": {
+    "id": { "type": "string", "description": "stable id, e.g. claim_<ulid>" },
+    "statement": { "type": "string" },
+    "reality_state": { "enum": ["LIVE", "WIRED", "STANDALONE", "MOCK", "FROZEN"] },
+    "truth_class": { "enum": ["VISION", "ARCHITECTURE", "CLAIM"] },
+    "epistemic_status": { "enum": ["OBSERVED", "DERIVED", "HYPOTHESIS", "PREDICTION", "CONTRADICTED", "STALE", "UNKNOWN"] },
+    "verification_status": { "enum": ["UNVERIFIED", "TESTED", "REVIEWED", "OWNER_APPROVED"] },
+    "valid_time": { "$ref": "#/$defs/interval", "description": "when the statement was/is actually true in the world" },
+    "recorded_time": { "$ref": "#/$defs/interval", "description": "when SEIF learned or recorded it" },
+    "evidence": { "type": "array", "items": { "type": "string" }, "description": "refs to events/artifacts/raw sources" },
+    "derived_from": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "supersedes": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "actor": { "type": "string", "description": "who asserted it" },
+    "signature": { "type": ["string", "null"], "description": "sha256 of canonical record (v0.1). ML-DSA-65 -> NOT_IN_V0_1." }
+  },
+  "$defs": {
+    "interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from"],
+      "properties": {
+        "from": { "type": "string", "format": "date-time" },
+        "until": { "type": ["string", "null"], "format": "date-time", "description": "null = still valid/open" }
+      }
+    }
+  }
+}

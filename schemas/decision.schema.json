@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seif.efficientlabs.ai/schemas/decision.schema.json",
+  "title": "SEIF Decision",
+  "description": "A recorded choice with rationale, options considered, evidence, and supersession — so the reasoning behind the system is reconstructable later, not lost to chat history.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "ts", "decider", "question", "chosen"],
+  "properties": {
+    "id": { "type": "string" },
+    "ts": { "type": "string", "format": "date-time" },
+    "decider": { "type": "string", "description": "neo for strategic/protected; otherwise proposing agent" },
+    "question": { "type": "string" },
+    "options": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "chosen": { "type": "string" },
+    "rationale": { "type": "string" },
+    "evidence": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "supersedes": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "reversible": { "type": "boolean", "default": true }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seif.efficientlabs.ai/schemas/approval.schema.json",
+  "title": "SEIF Approval (Operator Gate)",
+  "description": "Human-sovereignty gate. A protected action cannot reach AUTHORIZED without an APPROVED Approval record whose approver is the sovereign owner (neo). Deny-by-default.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "action_ref", "protected_action", "requested_by", "requested_at", "status"],
+  "properties": {
+    "id": { "type": "string" },
+    "action_ref": { "type": "string", "description": "task_id or event_id the approval governs" },
+    "protected_action": { "type": "string", "description": "id from governance/protected_actions.yaml" },
+    "requested_by": { "type": "string" },
+    "requested_at": { "type": "string", "format": "date-time" },
+    "status": { "enum": ["PENDING", "APPROVED", "DENIED", "EXPIRED"] },
+    "approver": { "type": ["string", "null"], "description": "MUST equal 'neo' for an APPROVED protected action" },
+    "decided_at": { "type": ["string", "null"], "format": "date-time" },
+    "reason": { "type": ["string", "null"] },
+    "signature": { "type": ["string", "null"] }
+  }
+}

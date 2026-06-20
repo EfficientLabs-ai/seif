@@ -1,0 +1,29 @@
+# SEIF workflow FSM (v0.1) — mirrors command-center/04_skills/neuro-symbolic/fsm.mjs.
+# A transition is legal ONLY if listed here AND its guard passes. Illegal transitions
+# are rejected deterministically by the symbolic layer — never by neural self-assessment.
+
+states: [DRAFT, PROPOSED, VALIDATED, AUTHORIZED, EXECUTING, VERIFYING, ACCEPTED, REJECTED, FAILED, COMPENSATING, SUPERSEDED]
+initial: DRAFT
+terminal: [ACCEPTED, REJECTED, SUPERSEDED]
+
+transitions:
+  - { from: DRAFT,        to: PROPOSED,     guard: schema_valid }
+  - { from: PROPOSED,     to: VALIDATED,    guard: policy_ok_and_in_scope }
+  - { from: PROPOSED,     to: REJECTED,     guard: policy_violation }
+  - { from: VALIDATED,    to: AUTHORIZED,   guard: approved_if_protected }   # neo Approval required when task.protected
+  - { from: VALIDATED,    to: REJECTED,     guard: approval_denied }
+  - { from: AUTHORIZED,   to: EXECUTING,    guard: worker_assigned }
+  - { from: EXECUTING,    to: VERIFYING,    guard: artifact_produced }
+  - { from: EXECUTING,    to: FAILED,       guard: worker_crash_or_timeout }
+  - { from: VERIFYING,    to: ACCEPTED,     guard: evidence_gate_passed }    # tests + independent review + (owner if protected)
+  - { from: VERIFYING,    to: REJECTED,     guard: evidence_gate_failed }
+  - { from: FAILED,       to: PROPOSED,     guard: retryable }               # at-least-once + idempotent effects
+  - { from: FAILED,       to: COMPENSATING, guard: has_compensation }
+  - { from: COMPENSATING, to: REJECTED,     guard: rollback_complete }
+  - { from: "*",          to: SUPERSEDED,   guard: superseded_by_newer }
+
+guards_note: >
+  Guards are evaluated by the symbolic layer (policy module + neuro-symbolic/fsm.mjs),
+  not by the neural model. 'approved_if_protected' consults an Approval record whose
+  approver must be 'neo'. 'evidence_gate_passed' requires acceptance tests + at least
+  one INDEPENDENT reviewer (the builder is never sole authority).

@@ -1,0 +1,33 @@
+# Protected actions — founder-only (neo). Source: command-center/00_truth/AUTH.md + SEIF v0.1.
+# A task touching any of these sets task.protected=true and CANNOT reach AUTHORIZED without
+# an APPROVED Approval record (approver: neo). Deny-by-default.
+
+authority: neo
+gate: schemas/approval.schema.json
+
+actions:
+  - id: secrets_access
+    desc: read / echo / interpolate secrets, .env, vault, tokens
+  - id: publish_public
+    desc: make any repo or package public, open-source, npm publish, public release   # << SEIF Apache-OSS lives here
+  - id: repo_create_or_visibility
+    desc: create remote repositories or change repo visibility (public<->private)
+  - id: production_deploy
+    desc: apex/production deploys, re-aliasing, live service start/stop/restart/reload
+  - id: pricing_or_public_claims
+    desc: pricing changes, public marketing claims, status-page claims
+  - id: governance_change
+    desc: edits to AUTH / this matrix / PERMISSIONS / ADRs
+  - id: destructive_fs
+    desc: delete or move outside an approved manifest; touching LIVE-wired paths
+  - id: network_boundary
+    desc: firewall / Tailscale / port / socket-binding changes
+  - id: financial_action
+    desc: enable live-capital trades, withdrawals, or broker credential use (Ondas / Stratos)
+  - id: external_send
+    desc: posting to social / email / external systems on the founder's behalf
+
+note: >
+  Observation is not authorization. Documentation is not proof of runtime reality.
+  Model agreement is not verification. No protected action may be performed OR
+  simulated as though approved.

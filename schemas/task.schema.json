@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seif.efficientlabs.ai/schemas/task.schema.json",
+  "title": "SEIF Task Envelope",
+  "description": "Typed unit of work (A2A Task object, adopted semantically). The ONLY legal way to request agent work. The kernel validates this before dispatch and rejects malformed or out-of-scope tasks deterministically.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "workspace", "objective", "writable_scope", "acceptance", "output_contract", "budget", "state", "protected", "created_by", "created_at"],
+  "properties": {
+    "id": { "type": "string", "description": "task_<ulid>" },
+    "parent_id": { "type": ["string", "null"] },
+    "workspace": { "type": "string", "description": "MWP workspace id this task is scoped to" },
+    "objective": { "type": "string" },
+    "inputs": { "type": "array", "items": { "type": "string" }, "default": [], "description": "refs to context/evidence provided to the worker" },
+    "writable_scope": { "type": "array", "items": { "type": "string" }, "default": [], "description": "glob paths the worker may modify; empty array = READ-ONLY task" },
+    "constraints": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "acceptance": { "type": "array", "items": { "type": "string" }, "description": "acceptance tests / criteria that gate ACCEPTED" },
+    "output_contract": { "type": "string", "description": "artifact schema id or explicit description of required output" },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tokens": { "type": ["integer", "null"] },
+        "seconds": { "type": ["integer", "null"] },
+        "usd": { "type": ["number", "null"] }
+      }
+    },
+    "assigned_to": { "type": ["string", "null"], "description": "capability or agent id; resolved by routing policy" },
+    "state": { "enum": ["DRAFT", "PROPOSED", "VALIDATED", "AUTHORIZED", "EXECUTING", "VERIFYING", "ACCEPTED", "REJECTED", "FAILED", "COMPENSATING", "SUPERSEDED"] },
+    "protected": { "type": "boolean", "description": "true if completing this task performs a protected action (requires Neo approval before AUTHORIZED)" },
+    "evidence_required": { "type": "boolean", "default": true },
+    "created_by": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" }
+  }
+}

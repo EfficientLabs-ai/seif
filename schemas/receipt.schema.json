@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seif.efficientlabs.ai/schemas/receipt.schema.json",
+  "title": "SEIF Receipt",
+  "description": "Proof that a tool call / effect happened. Enables at-least-once delivery with idempotent effects + dedup. v0.1 attests with sha256; ML-DSA-65 PQC signing is deferred (NOT_IN_V0_1). Do not promise exactly-once.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "action", "actor", "ts", "result", "idempotency_key", "inputs_hash"],
+  "properties": {
+    "id": { "type": "string" },
+    "action": { "type": "string" },
+    "actor": { "type": "string" },
+    "ts": { "type": "string", "format": "date-time" },
+    "task_id": { "type": ["string", "null"] },
+    "event_id": { "type": ["string", "null"] },
+    "result": { "enum": ["SUCCESS", "FAIL", "REJECTED", "SKIPPED_DUPLICATE"] },
+    "idempotency_key": { "type": "string" },
+    "inputs_hash": { "type": "string", "description": "sha256 of canonical inputs" },
+    "output_hash": { "type": ["string", "null"] },
+    "sig_alg": { "type": "string", "default": "sha256", "description": "ML-DSA-65 -> NOT_IN_V0_1" },
+    "signature": { "type": ["string", "null"] }
+  }
+}

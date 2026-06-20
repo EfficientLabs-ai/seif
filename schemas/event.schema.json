@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seif.efficientlabs.ai/schemas/event.schema.json",
+  "title": "SEIF Event",
+  "description": "Append-only, hash-chained event. The event log is the source of continuity; graph, memory, and read-models are DERIVED projections that may never rewrite it. Delivery is at-least-once; effects must be idempotent (see receipt.schema.json). Do not promise exactly-once.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "ts", "actor", "type", "hash"],
+  "properties": {
+    "id": { "type": "string", "description": "event_<ulid> (monotonic)" },
+    "ts": { "type": "string", "format": "date-time" },
+    "actor": { "type": "string", "description": "neo | claude | codex | gemini | kernel | <service>" },
+    "type": { "type": "string", "description": "task.created | task.transition | artifact.produced | approval.requested | approval.granted | approval.denied | claim.asserted | claim.superseded | receipt.written | contradiction.opened" },
+    "task_id": { "type": ["string", "null"] },
+    "payload": { "type": "object", "description": "event-type-specific body" },
+    "idempotency_key": { "type": ["string", "null"], "description": "dedup key for at-least-once delivery" },
+    "prev_hash": { "type": ["string", "null"], "description": "sha256 of the prior event in the chain" },
+    "hash": { "type": "string", "description": "sha256 over the canonicalized event excluding 'signature'" },
+    "signature": { "type": ["string", "null"], "description": "v0.1: optional sha256 attestation. ML-DSA-65 -> NOT_IN_V0_1." }
+  }
+}

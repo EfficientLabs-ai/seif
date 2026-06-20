@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seif.efficientlabs.ai/schemas/artifact.schema.json",
+  "title": "SEIF Artifact",
+  "description": "Tangible structured output of a task (A2A Artifact, adopted semantically). Distinct from conversational messages. Carries provenance + evidence + reality_state; accepted only through the evidence gate, never on a builder's narrative.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "task_id", "kind", "content_hash", "produced_by", "produced_at", "reality_state"],
+  "properties": {
+    "id": { "type": "string" },
+    "task_id": { "type": "string" },
+    "kind": { "enum": ["patch", "file", "report", "schema", "dataset", "plan", "review", "other"] },
+    "path": { "type": ["string", "null"], "description": "location if file-backed" },
+    "content_hash": { "type": "string", "description": "sha256 of artifact content" },
+    "produced_by": { "type": "string" },
+    "produced_at": { "type": "string", "format": "date-time" },
+    "reality_state": { "enum": ["LIVE", "WIRED", "STANDALONE", "MOCK", "FROZEN"] },
+    "evidence": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tests_passed": { "type": ["boolean", "null"] },
+        "reviewed_by": { "type": "array", "items": { "type": "string" }, "default": [], "description": "independent reviewers; builder may NOT be sole authority" },
+        "verdict": { "enum": ["ACCEPTED", "REJECTED", "PENDING"], "default": "PENDING" }
+      }
+    },
+    "signature": { "type": ["string", "null"] }
+  }
+}
