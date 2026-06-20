@@ -53,6 +53,18 @@ one signal). The negative result is more useful right now than a lucky positive 
 Recommended first v2 experiment: **(1)+(2)** — remove early-stop and add an independent completeness gate —
 the smallest change that directly targets the measured pathology. Re-run the same 20, same seed, compare.
 
+## Arm B v2 — smoke result (2026-06-21, pytest-5840, the instance v1 lost)
+Built v2 = kill stop-on-green + independent Codex completeness gate (`swe_arm_b_v2.py`, Codex-reviewed).
+On pytest-5840 the **mechanism worked as designed**: step 1 the agent shipped the same narrow fix v1
+did, the gate returned **INCOMPLETE** naming the exact gap ("no `self._conftest_plugins`/module-cache
+invalidation for mixed-case names"), step 2 the agent expanded the fix, gate returned **COMPLETE**.
+Patch grew **1574 b (v1) → 4122 b (v2)** (A was 3814 b). **No PASS_TO_PASS regression.**
+**BUT still UNRESOLVED:** both FAIL_TO_PASS (`test_setinitial_conftest_subdirs[test|tests]`) still fail.
+**Lesson:** an LLM completeness gate is NOT a ground-truth oracle — "complete per the issue text" can
+still miss the exact graded behavior. The gate fixes the *false-positive-stop*; it does not guarantee the
+gold approach. Whether v2 beats v1 / approaches A is an **aggregate** question — full 20-instance v2 batch
+running; `analyze.py` now reports A vs v1 vs v2 with A-vs-v2 and v1-vs-v2 McNemar pairs.
+
 ## Reproduce
 ```
 /home/neo/logos-venv/bin/python logos/analyze.py --score   # scores both arms, writes logs/AB_REPORT.md
