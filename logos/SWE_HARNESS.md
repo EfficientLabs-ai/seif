@@ -19,7 +19,25 @@ python -m swebench.harness.run_evaluation -d princeton-nlp/SWE-bench_Verified -s
 ```
 
 ## Arms (honest A/B)
+Both arms share `swe_common.prepare_clone` so they operate on **byte-identical** clones; the only
+intended difference is Arm B's execution-feedback loop.
 - **Arm A (baseline)** — `swe_arm_a.py`: clone repo@base_commit → `claude -p --permission-mode acceptEdits` (edits from reasoning, no headless test execution = **blind-patch** baseline) → `git diff` = model_patch → scored by the harness.
-- **Arm B (LOGOS)** — *next*: the same model + the LOGOS execution plane (sandboxed execution-feedback, FSM/ledger, independent verify, best-of-3). The A/B **delta** isolates that mechanism; same model/config both arms keeps it fair.
+- **Arm B (LOGOS)** — `swe_arm_b.py` (BUILT 2026-06-21): same clone, plus a real execution-feedback loop. The agent writes a self-authored reproduction `logos_repro.py`; the harness runs it in the per-instance swebench testbed image (`arm_b_testbed.py`: deps installed, `--network=none`, ephemeral) and feeds the result back for up to 3 turns. A passing repro only counts with a **non-empty source fix**. Held-out grading tests (`test_patch`) never touch the testbed → **no oracle leak**. Final source-only patch (repro excluded via pathspec, test edits filtered) scored by the SAME harness. Lifecycle ledgered through the SEIF kernel. Codex-reviewed (REQUEST_CHANGES → all HIGH/MED fixed).
 
-Protocol: 20 tasks stratified (5 single-file / 5 multi-same / 5 multi-cross / 5 refactor), ≥3 seeds/arm, p<0.05, 95% CIs, the success-vs-task-length **degradation curve** as the headline. See `eval/EVALUATION.md` + `eval/LOGOS_EXECUTION_PLAN.md`.
+### Image naming (Docker Hub)
+Prebuilt instance images live at `swebench/sweb.eval.x86_64.<iid>` with `__` normalized to `_1776_`
+(e.g. `psf__requests-2931` → `swebench/sweb.eval.x86_64.psf_1776_requests-2931:latest`). `arm_b_testbed.ensure_image` pulls these; Arm-B's batch thus warms the cache the scorer reuses.
+
+### Runners + analysis
+- `curate.py` → `eval_set_20.json` (adaptive stratified 20: fills scarce multi/large buckets fully).
+- `run_batch.py` (Arm A) / `run_batch_b.py` (Arm B): resumable — skip any instance whose preds exist.
+- `analyze.py [--score]`: scores both arms via the official harness, then per-arm resolve rate +
+  Wilson 95% CI, the per-bucket **degradation curve**, and an exact McNemar paired test → `logs/AB_REPORT.md`.
+
+### First head-to-head (1 instance, 2026-06-21)
+`psf__requests-2931`: Arm A **unresolved**, Arm B **unresolved** (~19s/score, cached image). Both produced
+the same `_encode_params` change; Arm B's feedback did NOT rescue it because the agent's self-authored
+repro PASSED with a wrong fix — a weak repro yields a false-positive feedback signal. Honest finding,
+not a harness fault: execution feedback is only as strong as the reproduction. Full 20×arm A/B delta pending.
+
+Protocol target: 20 tasks stratified by gold-file count, ≥3 seeds/arm, p<0.05, 95% CIs, the success-vs-task-length **degradation curve** as the headline. See `eval/EVALUATION.md` + `eval/LOGOS_EXECUTION_PLAN.md`.
