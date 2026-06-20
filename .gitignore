@@ -4,3 +4,8 @@ phase0/
 secrets/
 ledger/
 __pycache__/
+logs/
+logos/preds/
+*.sanity_gold.json
+gold.*.json
+arm_a_*.json
