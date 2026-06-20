@@ -15,13 +15,13 @@
     "produced_by": { "type": "string" },
     "produced_at": { "type": "string", "format": "date-time" },
     "reality_state": { "enum": ["LIVE", "WIRED", "STANDALONE", "MOCK", "FROZEN"] },
-    "evidence": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 }, "default": [] },
     "verification": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "tests_passed": { "type": ["boolean", "null"] },
-        "reviewed_by": { "type": "array", "items": { "type": "string" }, "default": [], "description": "independent reviewers; builder may NOT be sole authority" },
+        "reviewed_by": { "type": "array", "items": { "type": "string", "minLength": 1 }, "default": [], "description": "independent reviewers (non-empty); builder may NOT be sole authority" },
         "verdict": { "enum": ["ACCEPTED", "REJECTED", "PENDING"], "default": "PENDING" }
       }
     },

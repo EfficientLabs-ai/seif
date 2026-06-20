@@ -15,7 +15,7 @@
     "verification_status": { "enum": ["UNVERIFIED", "TESTED", "REVIEWED", "OWNER_APPROVED"] },
     "valid_time": { "$ref": "#/$defs/interval", "description": "when the statement was/is actually true in the world" },
     "recorded_time": { "$ref": "#/$defs/interval", "description": "when SEIF learned or recorded it" },
-    "evidence": { "type": "array", "items": { "type": "string" }, "description": "refs to events/artifacts/raw sources" },
+    "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "refs to events/artifacts/raw sources (non-empty)" },
     "derived_from": { "type": "array", "items": { "type": "string" }, "default": [] },
     "supersedes": { "type": "array", "items": { "type": "string" }, "default": [] },
     "actor": { "type": "string", "description": "who asserted it. v0.1 actor identity = OS principal (Linux user + Tailscale); crypto-key identity deferred -> NOT_IN_V0_1." },
