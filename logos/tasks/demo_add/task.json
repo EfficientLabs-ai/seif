@@ -1,0 +1,7 @@
+{
+  "id": "demo_add",
+  "objective": "Fix the bug in calc.py: add(a, b) must return the sum a + b. It currently returns the difference.",
+  "edit_files": ["calc.py"],
+  "visible_test_cmd": "python -m unittest test_visible -q",
+  "hidden_test_cmd": "python -m unittest test_hidden -q"
+}
