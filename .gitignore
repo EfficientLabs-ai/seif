@@ -2,3 +2,5 @@ phase0/
 *.env
 .env
 secrets/
+ledger/
+__pycache__/
