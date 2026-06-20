@@ -1,0 +1,20 @@
+name: SEIF CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  kernel-selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: deps
+        run: pip install jsonschema pyyaml
+      - name: schema validity (draft 2020-12)
+        run: python3 -c "import json,glob; from jsonschema import Draft202012Validator as V; [V.check_schema(json.load(open(f))) for f in glob.glob('schemas/*.json')]; print('schemas valid')"
+      - name: kernel selftest + C0 regressions
+        run: python3 kernel/selftest.py
