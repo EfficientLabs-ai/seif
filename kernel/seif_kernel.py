@@ -23,6 +23,7 @@ SEIF = Path(__file__).resolve().parent.parent
 SCHEMAS, GOV, LEDGER = SEIF / "schemas", SEIF / "governance", SEIF / "ledger"
 LEDGER.mkdir(exist_ok=True)
 EVENTS, RECEIPTS, APPROVALS = LEDGER / "events.jsonl", LEDGER / "receipts.jsonl", LEDGER / "approvals.jsonl"
+DECISIONS, ARTIFACTS = LEDGER / "decisions.jsonl", LEDGER / "artifacts.jsonl"
 
 _VALIDATORS = {n: Draft202012Validator(json.load(open(SCHEMAS / f"{n}.schema.json")))
                for n in ["task", "event", "artifact", "claim", "decision", "approval", "receipt"]}
@@ -197,5 +198,22 @@ def verify_chain(stream="main"):
     return True
 
 
+def record_decision(d):
+    validate("decision", d)
+    with open(DECISIONS, "a") as f:
+        f.write(json.dumps(d) + "\n")
+    append_event(d["decider"], "decision.recorded", {"question": d["question"], "chosen": d["chosen"]})
+    return d
+
+
+def record_artifact(a):
+    validate("artifact", a)
+    with open(ARTIFACTS, "a") as f:
+        f.write(json.dumps(a) + "\n")
+    append_event(a["produced_by"], "artifact.produced",
+                 {"kind": a["kind"], "verdict": a.get("verification", {}).get("verdict")}, task_id=a["task_id"])
+    return a
+
+
 if __name__ == "__main__":
-    print("SEIF kernel v0.1 — import me. Run kernel/selftest.py to prove invariants.")
+    print("SEIF kernel v0.1 — import me, or use kernel/cli.py. Run kernel/selftest.py to prove invariants.")
