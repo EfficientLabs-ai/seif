@@ -15,15 +15,16 @@ Run with the venv python:  /home/neo/logos-venv/bin/python logos/swe_arm_a.py <i
 """
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import swe_common as C  # noqa: E402  -- shared clone/diff/filter so both arms get identical inputs
+
 CLAUDE = "/home/neo/.local/bin/claude"
 DATASET = "princeton-nlp/SWE-bench_Verified"
 PREDS = "/home/neo/seif/logos/preds"
-TEST_RE = re.compile(r"(^|/)tests?/|(^|/)conftest\.py$|(^|/)test_[^/]*\.py$|_test\.py$")
 _DS = None
 
 
@@ -37,18 +38,6 @@ def get_instance(iid):
     return _DS[iid]
 
 
-def filter_tests(diff):
-    """Drop per-file diff sections touching test paths — the agent must not edit graded tests."""
-    out, keep = [], True
-    for line in diff.splitlines(keepends=True):
-        if line.startswith("diff --git "):
-            m = re.match(r"diff --git a/(\S+) b/(\S+)", line)
-            keep = not (m and TEST_RE.search(m.group(2)))
-        if keep:
-            out.append(line)
-    return "".join(out)
-
-
 def run_arm_a(iid, timeout=900, check_only=False):
     inst = get_instance(iid)
     print(f"instance={iid} repo={inst['repo']} base={inst['base_commit'][:10]} "
@@ -59,14 +48,7 @@ def run_arm_a(iid, timeout=900, check_only=False):
     work = tempfile.mkdtemp(prefix="arm_a_")
     try:
         repo = os.path.join(work, "repo")
-        subprocess.run(["git", "clone", "--quiet", f"https://github.com/{inst['repo']}.git", repo], check=True)
-        subprocess.run(["git", "-C", repo, "checkout", "--quiet", inst["base_commit"]], check=True)
-        # strip history (no upstream-fix leak) and re-init a clean base so `git diff` still works
-        subprocess.run(["rm", "-rf", os.path.join(repo, ".git")], check=True)
-        for c in (["git", "-C", repo, "init", "-q"],
-                  ["git", "-C", repo, "add", "-A"],
-                  ["git", "-C", repo, "-c", "user.name=base", "-c", "user.email=b@b", "commit", "-q", "-m", "base"]):
-            subprocess.run(c, check=True, capture_output=True)
+        C.prepare_clone(inst, repo)   # IDENTICAL clone to Arm B (shared helper): clone@base, strip history, re-init base
         prompt = (f"You are fixing a real GitHub issue in this repository (cwd).\n\nISSUE:\n"
                   f"{inst['problem_statement']}\n\nEdit the source files to fix the issue. "
                   "Do NOT modify any test files. Make the change and stop.")
@@ -77,9 +59,8 @@ def run_arm_a(iid, timeout=900, check_only=False):
             rc = p.returncode
         except subprocess.TimeoutExpired:
             timed = True
-        subprocess.run(["git", "-C", repo, "add", "-A"], capture_output=True)        # stage incl. NEW files
-        raw = subprocess.run(["git", "-C", repo, "diff", "--cached"], capture_output=True, text=True).stdout
-        diff = filter_tests(raw)                                                       # drop test edits
+        raw = C.staged_diff(repo)          # stage incl. NEW files, then cached diff (shared helper)
+        diff = C.filter_tests(raw)         # drop test edits (shared helper)
         os.makedirs(PREDS, exist_ok=True)
         with open(os.path.join(PREDS, f"arm_a_{iid}.jsonl"), "w") as f:
             f.write(json.dumps({"instance_id": iid, "model_name_or_path": "arm_a_claude_p", "model_patch": diff}) + "\n")
@@ -96,7 +77,7 @@ def _selftest():
          "diff --git a/tests/test_calc.py b/tests/test_calc.py\n-x\n+y\n"
          "diff --git a/conftest.py b/conftest.py\n-a\n+b\n"
          "diff --git a/pkg/util_test.py b/pkg/util_test.py\n-m\n+n\n")
-    f = filter_tests(d)
+    f = C.filter_tests(d)
     assert "src/calc.py" in f, "kept source"
     assert "tests/test_calc.py" not in f and "conftest.py" not in f and "util_test.py" not in f, f
     print("filter_tests selftest PASS (source kept, tests dropped)")
