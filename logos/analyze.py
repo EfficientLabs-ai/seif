@@ -22,7 +22,10 @@ PREDS = os.path.join(HERE, "preds")
 DATASET = "princeton-nlp/SWE-bench_Verified"
 EVAL_SET = os.path.join(HERE, "eval_set_20.json")
 REPORT = os.path.join(os.path.dirname(HERE), "logs", "AB_REPORT.md")
-ARMS = {"arm_a": ("arm_a_", "arm_a_claude_p"), "arm_b": ("arm_b_logos_", "arm_b_logos")}
+ARMS = {"arm_a": ("arm_a_", "arm_a_claude_p"),
+        "arm_b": ("arm_b_logos_", "arm_b_logos"),
+        "arm_b_v2": ("arm_b_v2_", "arm_b_v2")}
+PAIRS = [("arm_a", "arm_b"), ("arm_a", "arm_b_v2"), ("arm_b", "arm_b_v2")]  # key paired comparisons
 
 
 def wilson(k, n, z=1.96):
@@ -88,12 +91,16 @@ def main():
     for arm, (prefix, model) in ARMS.items():
         if do_score:
             combined, n = combine(prefix, instances)
+            if n == 0:
+                print(f"[{arm}] no predictions on disk yet — skipping", flush=True)
+                reports[arm] = None
+                continue
             print(f"[{arm}] scoring {n} predictions -> {combined}", flush=True)
             reports[arm] = score(combined, model, f"ab_{arm}")
         else:
             reports[arm] = latest_report(model)
         if not reports[arm]:
-            print(f"[{arm}] NO report found ({'scored' if do_score else 'on disk'}); run with --score after the batches finish.")
+            print(f"[{arm}] NO report found ({'scored' if do_score else 'on disk'}).")
     resolved = {}
     counts = {}
     for arm in ARMS:
@@ -105,45 +112,48 @@ def main():
         resolved[arm] = res
         counts[arm] = (len(res), len(submitted))
 
+    present = [a for a in ARMS if reports.get(a)]   # only arms we actually scored
     buckets = gold_buckets(instances)
     order = ["single", "multi", "large"]
-    lines = ["# Arm A (blind) vs Arm B (LOGOS execution-feedback) — honest A/B readout", ""]
+    label = {"arm_a": "A — blind", "arm_b": "B v1 — feedback+stop-on-green",
+             "arm_b_v2": "B v2 — feedback+independent gate"}
+    lines = ["# Arm A vs Arm B (LOGOS) — honest A/B readout", ""]
     lines.append(f"Eval set: {len(instances)} SWE-bench-Verified instances (light repos), 1 seed. "
                  "Grading = official swebench harness on held-out FAIL_TO_PASS/PASS_TO_PASS.")
     lines.append("")
     lines.append("| arm | resolved/scored | rate% | 95% CI (Wilson) |")
     lines.append("|---|---|---|---|")
-    for arm in ARMS:
+    for arm in present:
         k, n = counts[arm]
         p, lo, hi = wilson(k, n)
-        lines.append(f"| {arm} | {k}/{n} | {p} | [{lo}, {hi}] |")
+        lines.append(f"| {label.get(arm, arm)} | {k}/{n} | {p} | [{lo}, {hi}] |")
     lines.append("")
-    # degradation curve by task-length bucket
+    # degradation curve by task-length bucket (one column per present arm)
     lines.append("## Degradation curve — resolve rate by task length (gold files touched)")
-    lines.append("| bucket | n | arm_a resolved | arm_b resolved |")
-    lines.append("|---|---|---|---|")
+    lines.append("| bucket | n | " + " | ".join(label.get(a, a) for a in present) + " |")
+    lines.append("|" + "---|" * (2 + len(present)))
     for b in order:
         ids = [i for i in instances if buckets.get(i) == b]
         if not ids:
             continue
-        a = sum(i in resolved["arm_a"] for i in ids)
-        bb = sum(i in resolved["arm_b"] for i in ids)
-        lines.append(f"| {b} | {len(ids)} | {a}/{len(ids)} | {bb}/{len(ids)} |")
+        cells = [f"{sum(i in resolved[a] for i in ids)}/{len(ids)}" for a in present]
+        lines.append(f"| {b} | {len(ids)} | " + " | ".join(cells) + " |")
     lines.append("")
-    # paired significance over the eval set (both arms attempt every instance)
-    scored_both = set(instances)
-    a_only = sum((i in resolved["arm_a"]) and (i not in resolved["arm_b"]) for i in scored_both)
-    b_only = sum((i in resolved["arm_b"]) and (i not in resolved["arm_a"]) for i in scored_both)
-    p = mcnemar_exact(a_only, b_only)
-    delta = round(100 * (len(resolved["arm_b"]) - len(resolved["arm_a"])) / max(1, len(instances)), 1)
+    # paired significance for each key pair both arms were scored on
     lines.append("## Paired significance (McNemar, exact)")
-    lines.append(f"- B-only wins: {b_only}   A-only wins: {a_only}   discordant: {a_only + b_only}")
-    lines.append(f"- delta (B-A): {delta} pp   exact two-sided p = {p}")
-    lines.append(f"- Honest call: {'SIGNIFICANT' if p < 0.05 else 'NOT significant at n=%d, 1 seed' % len(instances)} "
-                 "— scale to 3 seeds + more instances before any public claim.")
+    for x, y in PAIRS:
+        if not (reports.get(x) and reports.get(y)):
+            continue
+        x_only = sum((i in resolved[x]) and (i not in resolved[y]) for i in instances)
+        y_only = sum((i in resolved[y]) and (i not in resolved[x]) for i in instances)
+        p = mcnemar_exact(x_only, y_only)
+        delta = round(100 * (len(resolved[y]) - len(resolved[x])) / max(1, len(instances)), 1)
+        sig = "SIGNIFICANT" if p < 0.05 else f"NOT significant at n={len(instances)}, 1 seed"
+        lines.append(f"- **{x} vs {y}**: {y}-only={y_only}  {x}-only={x_only}  "
+                     f"delta({y}-{x})={delta}pp  exact p={p}  → {sig}")
     lines.append("")
-    lines.append(f"resolved by arm_a: {sorted(resolved['arm_a'])}")
-    lines.append(f"resolved by arm_b: {sorted(resolved['arm_b'])}")
+    for arm in present:
+        lines.append(f"resolved by {arm}: {sorted(resolved[arm])}")
     os.makedirs(os.path.dirname(REPORT), exist_ok=True)
     open(REPORT, "w").write("\n".join(lines) + "\n")
     print("\n".join(lines))
