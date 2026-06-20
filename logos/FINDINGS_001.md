@@ -65,6 +65,35 @@ still miss the exact graded behavior. The gate fixes the *false-positive-stop*; 
 gold approach. Whether v2 beats v1 / approaches A is an **aggregate** question — full 20-instance v2 batch
 running; `analyze.py` now reports A vs v1 vs v2 with A-vs-v2 and v1-vs-v2 McNemar pairs.
 
+## Finding 002 — the independent gate recovers the regression and edges past blind (2026-06-21)
+Full 20-instance v2 batch (same clone, same scorer, 1 seed):
+
+| arm | resolved | rate | 95% CI (Wilson) |
+|---|---|---|---|
+| A — blind one-shot | 14/20 | 70.0% | [48.1, 85.5] |
+| B v1 — feedback + stop-on-green | 11/20 | 55.0% | [34.2, 74.2] |
+| **B v2 — feedback + independent completeness gate** | **15/20** | **75.0%** | [53.1, 88.8] |
+
+McNemar (exact): **v1→v2 = +20pp** (v2-only=4, v1-only=0 — v2's resolved set is a STRICT SUPERSET of v1's,
+p=0.125); **A→v2 = +5pp** (v2-only=2, A-only=1, p=1.0); A→v1 = −15pp (the original regression).
+Degradation curve: single 9/9/**11** · multi 4/2/3 · large 1/0/1 (A/v1/v2).
+
+**Reads (honest):**
+1. The gate **fixed the v1 pathology**: v2 strictly dominates v1 (+20pp, never lost an instance v1 won).
+   Independent completeness verification directly removed the false-positive-stop.
+2. **v2 is the best arm and the only one to beat blind (75% vs 70%)** — but +5pp at n=20/1-seed is a
+   statistical TIE (p=1.0; net +1 instance: v2 won pylint-4970 & 7080 that blind missed, lost pylint-8898).
+3. **Nothing is significant at n=20, 1 seed.** Direction + the strict-superset pattern are the signal.
+4. Stochasticity note: pytest-5840 (unresolved in the v2 smoke) RESOLVED in the batch re-run — per-instance
+   runs are stochastic; another reason seeds matter.
+
+**Confound (state honestly):** v2 uses more compute than A (multi-turn + a Codex judge). The clean
+gate-isolating comparison is **v1 vs v2** (both multi-turn-capable; v2 adds the gate) → +20pp. A-vs-v2 is
+the full-pipeline-vs-blind comparison.
+
+**Next for a publishable claim:** 3 seeds × 20 (kills stochastic noise), then more instances + heavier repos.
+Optional ablation: "multi-turn feedback, no gate" to separate extra-turns from the gate itself.
+
 ## Reproduce
 ```
 /home/neo/logos-venv/bin/python logos/analyze.py --score   # scores both arms, writes logs/AB_REPORT.md
