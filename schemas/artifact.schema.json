@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://seif.efficientlabs.ai/schemas/artifact.schema.json",
   "title": "SEIF Artifact",
-  "description": "Tangible structured output of a task (A2A Artifact, adopted semantically). Distinct from conversational messages. Carries provenance + evidence + reality_state; accepted only through the evidence gate, never on a builder's narrative.",
+  "description": "Tangible structured output of a task. Accepted only through the evidence gate, never on a builder's narrative. The `allOf` gate enforces that an ACCEPTED verdict carries passed tests, an independent reviewer, and evidence.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "task_id", "kind", "content_hash", "produced_by", "produced_at", "reality_state"],
@@ -10,7 +10,7 @@
     "id": { "type": "string" },
     "task_id": { "type": "string" },
     "kind": { "enum": ["patch", "file", "report", "schema", "dataset", "plan", "review", "other"] },
-    "path": { "type": ["string", "null"], "description": "location if file-backed" },
+    "path": { "type": ["string", "null"] },
     "content_hash": { "type": "string", "description": "sha256 of artifact content" },
     "produced_by": { "type": "string" },
     "produced_at": { "type": "string", "format": "date-time" },
@@ -26,5 +26,24 @@
       }
     },
     "signature": { "type": ["string", "null"] }
-  }
+  },
+  "allOf": [
+    {
+      "$comment": "An ACCEPTED artifact must have passed tests, >=1 independent reviewer, and >=1 evidence ref.",
+      "if": {
+        "required": ["verification"],
+        "properties": { "verification": { "required": ["verdict"], "properties": { "verdict": { "const": "ACCEPTED" } } } }
+      },
+      "then": {
+        "required": ["evidence"],
+        "properties": {
+          "evidence": { "minItems": 1 },
+          "verification": {
+            "required": ["tests_passed", "reviewed_by"],
+            "properties": { "tests_passed": { "const": true }, "reviewed_by": { "minItems": 1 } }
+          }
+        }
+      }
+    }
+  ]
 }

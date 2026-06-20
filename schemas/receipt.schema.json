@@ -14,9 +14,11 @@
     "task_id": { "type": ["string", "null"] },
     "event_id": { "type": ["string", "null"] },
     "result": { "enum": ["SUCCESS", "FAIL", "REJECTED", "SKIPPED_DUPLICATE"] },
-    "idempotency_key": { "type": "string" },
+    "idempotency_key": { "type": "string", "description": "unique per (actor, action) in the store" },
     "inputs_hash": { "type": "string", "description": "sha256 of canonical inputs" },
     "output_hash": { "type": ["string", "null"] },
+    "failure_reason": { "type": ["string", "null"], "description": "required-by-convention when result is FAIL or REJECTED" },
+    "duplicate_of": { "type": ["string", "null"], "description": "receipt id of the original when result is SKIPPED_DUPLICATE" },
     "sig_alg": { "type": "string", "default": "sha256", "description": "ML-DSA-65 -> NOT_IN_V0_1" },
     "signature": { "type": ["string", "null"] }
   }

@@ -2,20 +2,31 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://seif.efficientlabs.ai/schemas/approval.schema.json",
   "title": "SEIF Approval (Operator Gate)",
-  "description": "Human-sovereignty gate. A protected action cannot reach AUTHORIZED without an APPROVED Approval record whose approver is the sovereign owner (neo). Deny-by-default.",
+  "description": "Human-sovereignty gate. A protected action cannot reach AUTHORIZED without an APPROVED record whose approver is the sovereign owner (neo). Deny-by-default. Identity of approver is OS-anchored in v0.1 (Linux user + Tailscale); crypto-key proof -> NOT_IN_V0_1.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "action_ref", "protected_action", "requested_by", "requested_at", "status"],
   "properties": {
     "id": { "type": "string" },
     "action_ref": { "type": "string", "description": "task_id or event_id the approval governs" },
-    "protected_action": { "type": "string", "description": "id from governance/protected_actions.yaml" },
+    "protected_action": {
+      "enum": ["secrets_access", "publish_public", "repo_create_or_visibility", "production_deploy", "pricing_or_public_claims", "governance_change", "destructive_fs", "network_boundary", "financial_action", "external_send"],
+      "description": "must match an id in governance/protected_actions.yaml"
+    },
     "requested_by": { "type": "string" },
     "requested_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": ["string", "null"], "format": "date-time", "description": "after this, a PENDING approval becomes EXPIRED and the action stays blocked" },
     "status": { "enum": ["PENDING", "APPROVED", "DENIED", "EXPIRED"] },
-    "approver": { "type": ["string", "null"], "description": "MUST equal 'neo' for an APPROVED protected action" },
+    "approver": { "type": ["string", "null"], "description": "MUST equal 'neo' for an APPROVED protected action (kernel-enforced)" },
     "decided_at": { "type": ["string", "null"], "format": "date-time" },
     "reason": { "type": ["string", "null"] },
     "signature": { "type": ["string", "null"] }
-  }
+  },
+  "allOf": [
+    {
+      "$comment": "An APPROVED record must name an approver and a decision time.",
+      "if": { "properties": { "status": { "const": "APPROVED" } }, "required": ["status"] },
+      "then": { "required": ["approver", "decided_at"], "properties": { "approver": { "const": "neo" } } }
+    }
+  ]
 }

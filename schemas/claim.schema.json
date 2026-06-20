@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://seif.efficientlabs.ai/schemas/claim.schema.json",
   "title": "SEIF Claim",
-  "description": "A single assertion about reality with four INDEPENDENT truth axes + bi-temporal validity. Supersedes the legacy two-axis tagging. No agent may promote VISION->CLAIM on linguistic confidence; the transition requires evidence + passed verification.",
+  "description": "A single assertion about reality with four INDEPENDENT truth axes + bi-temporal validity. No agent may promote VISION->CLAIM on linguistic confidence; the `allOf` gate below enforces that a CLAIM carries evidence and has passed verification.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "statement", "reality_state", "truth_class", "epistemic_status", "verification_status", "valid_time", "recorded_time", "evidence", "actor"],
@@ -18,9 +18,21 @@
     "evidence": { "type": "array", "items": { "type": "string" }, "description": "refs to events/artifacts/raw sources" },
     "derived_from": { "type": "array", "items": { "type": "string" }, "default": [] },
     "supersedes": { "type": "array", "items": { "type": "string" }, "default": [] },
-    "actor": { "type": "string", "description": "who asserted it" },
+    "actor": { "type": "string", "description": "who asserted it. v0.1 actor identity = OS principal (Linux user + Tailscale); crypto-key identity deferred -> NOT_IN_V0_1." },
     "signature": { "type": ["string", "null"], "description": "sha256 of canonical record (v0.1). ML-DSA-65 -> NOT_IN_V0_1." }
   },
+  "allOf": [
+    {
+      "$comment": "evidence-first gate: a CLAIM must carry evidence and not be UNVERIFIED.",
+      "if": { "required": ["truth_class"], "properties": { "truth_class": { "const": "CLAIM" } } },
+      "then": {
+        "properties": {
+          "evidence": { "minItems": 1 },
+          "verification_status": { "enum": ["TESTED", "REVIEWED", "OWNER_APPROVED"] }
+        }
+      }
+    }
+  ],
   "$defs": {
     "interval": {
       "type": "object",

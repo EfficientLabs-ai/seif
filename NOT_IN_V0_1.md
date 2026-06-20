@@ -15,6 +15,7 @@ The optimal system is the **smallest inspectable kernel** that can safely coordi
 | QUBO / quantum-inspired routing | no proof of advantage; fashion risk | deterministic scoring → CP-SAT/SMT baseline; quantum only as benchmarked CHALLENGER |
 | TLA+ full-system formalization | don't formalize the whole company | TLA+/SMT only on: protected-action authz, FSM transitions, scheduler/failover invariants |
 | PQC signing (ML-DSA-65 / ML-KEM-768) | non-deterministic sigs + lib overhead before identity need | `sha256` content hashes on events/receipts; PQC when cross-node trust is real |
+| Crypto-key actor identity (actor keys, rotation, revocation) | no cross-node trust need yet | v0.1 actor identity = OS principal (Linux user + Tailscale) |
 | Self-modifying / self-replacing enforcement | unsafe | **self-proposing** only: proposal → challenger → tests → review → shadow → Neo approval → HARNESS_Cn |
 | 12-service "fabric" deployment | sprawl; uninspectable TCB | 7-function microkernel over existing substrate |
 | Graphical command-center (write path) | must never become a path around policy | read-only projection only, after reliable events exist |
