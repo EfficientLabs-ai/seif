@@ -152,10 +152,12 @@ def turn_prompt(issue, diff, feedback, first):
             "in the reproduction. Make the change and stop.")
 
 
-def run_arm_b_v2(iid, check_only=False):
+def run_arm_b_v2(iid, check_only=False, no_gate=False):
     inst = get_instance(iid)
     issue = inst["problem_statement"]
-    print(f"instance={iid} repo={inst['repo']} base={inst['base_commit'][:10]} problem_chars={len(issue)}")
+    model = "arm_b_v3_nogate" if no_gate else "arm_b_v2"   # ablation: same loop, no independent gate
+    print(f"instance={iid} repo={inst['repo']} base={inst['base_commit'][:10]} "
+          f"problem_chars={len(issue)} model={model}")
     if check_only:
         print("check-only OK; claude:", os.path.exists(CLAUDE), "codex:", os.path.exists(CODEX),
               "image:", TB.image_for(iid))
@@ -218,7 +220,15 @@ def run_arm_b_v2(iid, check_only=False):
                             "in the SOURCE, not the reproduction.")
                 continue
 
-            # repro passes WITH a source fix -> INDEPENDENT COMPLETENESS GATE (no stop-on-green)
+            # repro passes WITH a source fix
+            if no_gate:
+                # ABLATION (arm_b_v3_nogate): no independent gate, no stop-on-green -> refine to full budget
+                gate_log.append({"step": step, "verdict": "NO_GATE"})
+                print(f"[v3-nogate] step {step}: repro pass, no gate -> keep refining (full budget)")
+                feedback = ("Your reproduction passes. Make the fix as COMPLETE and comprehensive as "
+                            "possible — handle every case the issue describes, in the SOURCE.")
+                continue
+            # -> INDEPENDENT COMPLETENESS GATE (no stop-on-green)
             verdict, missing = codex_gate(issue, src)
             gate_log.append({"step": step, "verdict": verdict, "missing": missing[:300]})
             _ledger(lambda step=step, verdict=verdict: K.append_event(
@@ -241,7 +251,7 @@ def run_arm_b_v2(iid, check_only=False):
         raw = C.staged_diff(repo)
         diff = C.filter_tests(C.staged_diff(repo, exclude=[REPRO]))
         base = C.write_prediction(
-            PREDS, iid, "arm_b_v2", diff, raw,
+            PREDS, iid, model, diff, raw,
             {"agent_rcs": rcs, "timed_out": timed, "steps": len(rcs), "repro_outcomes": repro_outcomes,
              "gate_log": gate_log, "accepted_by_gate": accepted, "stop_reason": stop_reason, "image": img})
         _ledger(lambda: K.record_artifact({
@@ -260,7 +270,7 @@ def run_arm_b_v2(iid, check_only=False):
         try:
             raw = C.staged_diff(repo)
             diff = C.filter_tests(C.staged_diff(repo, exclude=[REPRO]))
-            C.write_prediction(PREDS, iid, "arm_b_v2", diff, raw,
+            C.write_prediction(PREDS, iid, model, diff, raw,
                                {"agent_rcs": rcs, "timed_out": timed, "steps": len(rcs),
                                 "repro_outcomes": repro_outcomes, "gate_log": gate_log,
                                 "accepted_by_gate": accepted, "stop_reason": "error",
@@ -273,4 +283,4 @@ def run_arm_b_v2(iid, check_only=False):
 
 if __name__ == "__main__":
     iid = next((a for a in sys.argv[1:] if not a.startswith("--")), "pytest-dev__pytest-5840")
-    run_arm_b_v2(iid, check_only="--check" in sys.argv)
+    run_arm_b_v2(iid, check_only="--check" in sys.argv, no_gate="--no-gate" in sys.argv)

@@ -21,11 +21,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PREDS = os.path.join(HERE, "preds")
 DATASET = "princeton-nlp/SWE-bench_Verified"
 EVAL_SET = os.path.join(HERE, "eval_set_20.json")
+_js = [a for a in sys.argv[1:] if a.endswith(".json")]
+if _js:
+    EVAL_SET = _js[0]
 REPORT = os.path.join(os.path.dirname(HERE), "logs", "AB_REPORT.md")
 ARMS = {"arm_a": ("arm_a_", "arm_a_claude_p"),
         "arm_b": ("arm_b_logos_", "arm_b_logos"),
+        "arm_b_v3_nogate": ("arm_b_v3_nogate_", "arm_b_v3_nogate"),
         "arm_b_v2": ("arm_b_v2_", "arm_b_v2")}
-PAIRS = [("arm_a", "arm_b"), ("arm_a", "arm_b_v2"), ("arm_b", "arm_b_v2")]  # key paired comparisons
+# key paired comparisons; v3_nogate-vs-v2 = the moat-decider (gate vs just-more-turns)
+PAIRS = [("arm_a", "arm_b"), ("arm_a", "arm_b_v2"), ("arm_b", "arm_b_v2"), ("arm_b_v3_nogate", "arm_b_v2")]
 
 
 def wilson(k, n, z=1.96):
@@ -116,6 +121,7 @@ def main():
     buckets = gold_buckets(instances)
     order = ["single", "multi", "large"]
     label = {"arm_a": "A — blind", "arm_b": "B v1 — feedback+stop-on-green",
+             "arm_b_v3_nogate": "B v3 — feedback, NO gate (ablation)",
              "arm_b_v2": "B v2 — feedback+independent gate"}
     lines = ["# Arm A vs Arm B (LOGOS) — honest A/B readout", ""]
     lines.append(f"Eval set: {len(instances)} SWE-bench-Verified instances (light repos), 1 seed. "
