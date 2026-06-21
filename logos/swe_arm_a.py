@@ -24,7 +24,7 @@ import swe_common as C  # noqa: E402  -- shared clone/diff/filter so both arms g
 
 CLAUDE = "/home/neo/.local/bin/claude"
 DATASET = "princeton-nlp/SWE-bench_Verified"
-PREDS = "/home/neo/seif/logos/preds"
+PREDS = os.environ.get("SEIF_PREDS") or ("/home/neo/seif/logos/preds")
 _DS = None
 
 

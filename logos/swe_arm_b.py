@@ -37,7 +37,7 @@ except Exception:               # noqa: BLE001
 
 CLAUDE = "/home/neo/.local/bin/claude"
 DATASET = "princeton-nlp/SWE-bench_Verified"
-PREDS = os.path.join(HERE, "preds")
+PREDS = os.environ.get("SEIF_PREDS") or (os.path.join(HERE, "preds"))
 REPRO = "logos_repro.py"
 BUDGET = 3              # turn 1 + up to 2 feedback turns
 CLAUDE_TIMEOUT = 900

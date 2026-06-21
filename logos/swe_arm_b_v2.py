@@ -35,7 +35,7 @@ except Exception:               # noqa: BLE001
 CLAUDE = "/home/neo/.local/bin/claude"
 CODEX = "/home/neo/.nvm/versions/node/v22.22.3/bin/codex"
 DATASET = "princeton-nlp/SWE-bench_Verified"
-PREDS = os.path.join(HERE, "preds")
+PREDS = os.environ.get("SEIF_PREDS") or (os.path.join(HERE, "preds"))
 REPRO = "logos_repro.py"
 BUDGET = 4                 # turn 1 + up to 3 gate/repro-driven refinements (no early stop on repro pass)
 CLAUDE_TIMEOUT = 900
