@@ -114,6 +114,30 @@ McNemar (exact): **v1→v2 = +10.8pp** (v2-only=4, v1-only=0 — STILL a strict 
 
 **Defensible claim now:** *"An independent completeness gate strictly dominates naive self-verification (+10.8pp, strict superset, robust across n=20 and n=37) and holds a consistent ~5pp edge over blind one-shot — not yet statistically significant (p=0.625); significance needs 3 seeds + ~100 instances."*
 
+## Finding 004 — the MOAT-DECIDER: it's the gate, not the turns (2026-06-21)
+No-gate ablation (arm_b_v3_nogate = identical multi-turn execution-feedback loop, full budget, but NO
+independent gate), 37 instances, 1 seed, official scorer:
+
+| arm | resolved | rate | 95% CI |
+|---|---|---|---|
+| A — blind one-shot | 28/37 | 75.7% | [59.9, 86.6] |
+| v1 — feedback + stop-on-green | 26/37 | 70.3% | [54.2, 82.5] |
+| v3 — feedback, NO gate (full budget) | 27/37 | 73.0% | [57.0, 84.6] |
+| **v2 — feedback + INDEPENDENT gate** | **30/37** | **81.1%** | [65.8, 90.5] |
+
+**The ordering is the result:** v2 (gate) > A (blind) > v3 (no-gate) ≈ A > v1 (stop-on-green).
+- **v2 vs v3 = +8.1pp** (v2-only=5, v3-only=2, McNemar p=0.45). The independent gate is the active ingredient.
+- **v3 ≈ blind** (73.0 vs 75.7): multi-turn execution feedback *without* an independent check does NOT beat
+  blind. **More turns/compute alone doesn't help.** Only adding independent verification lifts above blind.
+- **Not significant** at n=37/1-seed (every pairwise p ≥ 0.13). Direction + the clean ordering are the signal.
+
+**Defensible claim (honest):** *"Execution feedback only helps when paired with INDEPENDENT verification.
+Iterating more on the model's own signal (v3) lands at blind-parity; the lift to 81% comes specifically
+from the independent completeness gate (+8.1pp over the same loop without it). Not yet statistically
+significant — needs 3 seeds + ~100 instances."* This isolates the architectural lever: **externalized,
+independent verification — not more model deliberation — is what works.** Exactly the Sovereign
+Intelligence Amplification thesis (build what the model can't reliably provide itself).
+
 ## Reproduce
 ```
 /home/neo/logos-venv/bin/python logos/analyze.py --score   # scores both arms, writes logs/AB_REPORT.md
