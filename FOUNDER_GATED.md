@@ -35,6 +35,16 @@
 - I did **NOT** autonomously edit StratosAgent/ECP on an invented task — that's correctly yours to define (#3).
 - Receipts/findings committed as I go; this file stays current.
 
+## 🤖 v0.2 Evidence Engine — autonomous build progress (2026-06-22)
+Per your binding v0.2 directive. Status legend honored (no confidence-upgrades).
+- ✅ **3-seed significance scale-up LAUNCHED** (seeds 2,3 × 4 arms × 37, resumable; watcher auto-scores when done).
+- ✅ **Research→Implementation matrix** (`docs/RESEARCH_TO_IMPLEMENTATION_MATRIX.md`) — every mechanism classified MEASURED/BUILT/WIRED/EXPERIMENTAL/TARGET/REJECTED.
+- ✅ **WP-A Evidence Contract** (`logos/evidence_contract.py` + schema) — frozen/hashed proof obligations before any candidate; authenticity = ledger anchor (Codex-reviewed + hardened).
+- ✅ **WP-E Integrity Guard** (`logos/integrity_guard.py`) — hard reward-hacking gate; Codex caught + I fixed 2 HARD bypasses (rename, quoted paths) + case-insensitivity. **This is the eval-integrity gate.**
+- ✅ **WP-C Mutation Adequacy Gate** (`logos/mutation_gate.py`) — AST mutants + kill-rate scorer (do tests reject plausible-wrong impls?).
+- ⏳ **NEXT (autonomous, in order):** WP-B candidate-blind Test Architect (needs an LLM), WP-D multi-channel Oracle (tri-state, wires A/C/E + harness), WP-F trajectory summaries, WP-G assumption graph, WP-H MCP telemetry; then the v0.2 experiments (equal-budget causality E, oracle-adequacy, 3-seed significance) + the required docs.
+- All on PR #5's branch. NOT auto-merged. MCTS / new judges / auto-promotion NOT built (per directive).
+
 ## ⚠️ CORRECTION (integrity note)
 My earlier "StratosAgent has 8 failing suites" was **WRONG — a harness artifact, now retracted.**
 `git worktree` doesn't copy gitignored `node_modules`, so the worktree couldn't resolve `@noble/post-quantum`
