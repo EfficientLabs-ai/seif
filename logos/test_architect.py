@@ -15,15 +15,37 @@ production; a stub in tests) so the blindness machinery is verifiable without a 
 """
 import hashlib
 import json
+import re
 
 ALLOWED_CONTEXT_KEYS = {"task_id", "issue", "repo_view", "public_tests", "architecture", "contract"}
 FORBIDDEN_KEYS = {
     "candidate", "candidate_patch", "patch", "model_patch", "diff",
-    "gold", "gold_patch", "reference_patch", "solution",
+    "gold", "gold_patch", "reference_patch", "solution", "answer", "oracle", "ground_truth", "expected_patch",
     "hidden_tests", "grading_tests", "test_patch", "fail_to_pass", "pass_to_pass",
     "reproduction", "repro", "logos_repro", "implementer_reasoning",
 }
+# normalized (strip non-alphanumerics) so camelCase / underscore variants can't dodge the set:
+# 'candidatePatch', 'gold_patch', 'FAIL_TO_PASS' all collapse to a forbidden token.
+_FORBIDDEN_NORM = {re.sub(r"[^a-z0-9]", "", k) for k in FORBIDDEN_KEYS}
+# value-level: the file-context fields must carry base-repo material, never a diff/patch or the graded tests
+FORBIDDEN_VALUE_MARKERS = ("diff --git", "+++ b/", "--- a/", "FAIL_TO_PASS", "PASS_TO_PASS",
+                           "<<<<<<<", ">>>>>>>", "rename from ")
 TEST_KINDS = {"acceptance", "negative", "edge", "property", "metamorphic", "regression_hypothesis"}
+
+
+def _norm(k):
+    return re.sub(r"[^a-z0-9]", "", str(k).lower())
+
+
+def _walk_strings(obj):
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            yield from _walk_strings(v)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            yield from _walk_strings(v)
 
 
 class BlindnessError(ValueError):
@@ -56,16 +78,27 @@ def _walk_keys(obj):
 
 
 def assert_blind(context):
-    """Structurally enforce blindness. (1) top-level keys ⊆ allowlist; (2) NO forbidden key anywhere in
-    the (nested) context — except inside the Evidence Contract, which legitimately names protected paths
-    like 'test_patch'. Raises BlindnessError on any violation."""
+    """Structurally enforce blindness:
+      (1) top-level keys ⊆ allowlist;
+      (2) NO forbidden key ANYWHERE (normalized, so camelCase/underscore variants are caught) — the
+          contract is scanned too; its KEYS are all safe, and 'test_patch' etc. live only as string VALUES
+          in protected_paths, so there is no exemption needed (closes the prior contract-exemption hole);
+      (3) the file-context fields (repo_view, public_tests) carry NO diff/patch/graded-test content.
+    Threat-model note: `issue` is trusted, immutable base-dataset text (we do not content-scan free prose);
+    the realistic leak is a candidate/gold/hidden passed as structure or as file content, which (1)-(3) bar.
+    Raises BlindnessError on any violation."""
     extra = set(context.keys()) - ALLOWED_CONTEXT_KEYS
     if extra:
         raise BlindnessError(f"non-allowlisted context keys: {sorted(extra)}")
-    scan = {k: v for k, v in context.items() if k != "contract"}   # contract may reference protected names
-    for key in _walk_keys(scan):
-        if key.lower() in FORBIDDEN_KEYS:
+    for key in _walk_keys(context):
+        if _norm(key) in _FORBIDDEN_NORM:
             raise BlindnessError(f"forbidden key in Test Architect context: {key!r} (candidate/gold/hidden material)")
+    for field in ("repo_view", "public_tests"):
+        for s in _walk_strings(context.get(field, [])):
+            for marker in FORBIDDEN_VALUE_MARKERS:
+                if marker in s:
+                    raise BlindnessError(f"forbidden content marker {marker!r} in {field} (a diff/patch or "
+                                         "graded test leaked into the file context)")
     return True
 
 
@@ -109,11 +142,17 @@ def _selftest():
                         public_tests=["tests/test_models.py"], architecture="layered", contract=contract)
     assert assert_blind(ctx)
 
-    # blindness: candidate/gold/hidden material cannot enter
+    # blindness: candidate/gold/hidden material cannot enter (structure, obfuscated keys, values, contract)
     for bad in ({"task_id": "t", "issue": "i", "candidate_patch": "diff..."},
                 {"task_id": "t", "issue": "i", "gold": "the answer"},
                 {"task_id": "t", "issue": "i", "repo_view": [{"test_patch": "hidden"}]},
-                {"task_id": "t", "issue": "i", "extra_field": 1}):
+                {"task_id": "t", "issue": "i", "extra_field": 1},
+                {"task_id": "t", "issue": "i", "repo_view": [{"candidatePatch": "x"}]},   # camelCase variant
+                {"task_id": "t", "issue": "i", "repo_view": [{"FAIL_TO_PASS": []}]},        # graded key
+                {"task_id": "t", "issue": "i", "contract": {"gold_patch": "leak"}},          # contract NOT exempt
+                {"task_id": "t", "issue": "i",                                                # value-level diff leak
+                 "repo_view": [{"path": "src/x.py", "content": "diff --git a/x b/x\n+evil\n"}]},
+                {"task_id": "t", "issue": "i", "public_tests": ["FAIL_TO_PASS: test_x"]}):
         try:
             assert_blind(bad); raise AssertionError(f"blindness must reject {list(bad)}")
         except BlindnessError:
