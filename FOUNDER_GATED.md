@@ -4,17 +4,22 @@
 > parked here per the deny-by-default doctrine. I (Claude) execute everything else autonomously and log
 > it. Updated 2026-06-21 (founder at gym + Fortnite content; available remote).
 
+## ✅ Cleared (2026-06-22)
+- **SEIF PR #5 MERGED** (eval harness + Agent Harness + /seif + master architecture + v0.2 WP-A/C/E).
+- **content-engine PR #2 MERGED** (claim-discipline gate + CI).
+- **Gemini DEFERRED** by founder (can't auth; not worth the hassle). NOT a blocker — our roadmap already
+  found the multi-model verifier *panel* overrated (correlated opinions); the independent-verifier role is
+  **Codex-only**, and the real lever is executable evidence (the Evidence Engine). No Gemini dependency anywhere.
+
 ## ⏳ Awaiting your call
 | # | Item | Why gated | Action for you |
 |---|---|---|---|
-| 0 | **SEIF PR #5** (eval harness + Agent Harness + /seif + master architecture, ~19 commits) | merge to main | review + merge: `gh pr merge 5 --merge` (EfficientLabs-ai/seif) |
-| 1 | **content-engine PR #2** (claim-discipline gate + CI) | merge to main | review + merge: `gh pr merge 2 --merge` (Neo-The-Architect/content-engine) |
-| 2 | **Gemini API key** still 403 (unrestricted-key) | secret | restrict/mint in Cloud Console → unlocks the multi-model verifier panel (Codex+Gemini) |
-| 3 | **`/seif` dogfood PR(s) on StratosAgent** (autonomous tonight) | merge to main | I'll open branch/PRs; you review + merge the good ones |
-| 4 | **Composio (self-hosted) + Nango** for Stratos integrations | secrets/keys | provide keys when we reach P3 (Stratos-as-runtime) |
-| 5 | **Hard branch protection** on EfficientLabs-ai/seif | org/plan | enable ruleset (was applied on content-engine) |
-| 6 | **Publish/OSS decision** for SEIF (Apache) | public surface | hold until founder gate |
-| 7 | **Social posting / content distribution** | public, brand | the poster stays gated; approve per-campaign |
+| 0 | **SEIF PR #6** — v0.2 Evidence Oracle (WP-D) + Assumption Graph (WP-G) + Trajectory Summary (WP-F) + Governed Integration Fabric capability layer | merge to main | review + merge: `gh pr merge 6 --merge` (EfficientLabs-ai/seif) |
+| 1 | **First real `/seif` task** | you pick the work | name a genuine feature/bug (Stratos is green — no failing suite to auto-target); I run the full loop → branch/PR + receipt |
+| 2 | **Composio (self-hosted) + Nango** for Stratos integrations | secrets/keys | provide keys when we reach P3 (Stratos-as-runtime) |
+| 3 | **Hard branch protection** on EfficientLabs-ai/seif | org/plan | enable ruleset (already applied on content-engine) |
+| 4 | **Publish/OSS decision** for SEIF (Apache) | public surface | hold until founder gate |
+| 5 | **Social posting / content distribution** | public, brand | the poster stays gated; approve per-campaign |
 
 ## ✅ Done autonomously today (for your awareness)
 - SEIF **action-ledger hook LIVE** (records every tool call, hash-chained, secrets redacted, fail-open).
