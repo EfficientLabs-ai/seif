@@ -28,8 +28,10 @@
   tests pass → landed on a branch → receipt; **main left untouched**). P1 functionally complete.
 - ✅ Harness proven on **StratosAgent's real suite** — and the dogfood caught a real bug in MY harness
   (worktree missing gitignored deps); fixed (symlink dep dirs) + re-validated **14/14** (see correction below).
-- 🔄 **No-gate ablation RUNNING** (arm_b_v3_nogate, 37 instances) — the moat-decider: does the independent
-  gate help, or is it just "more turns"? Auto-scores the 4-arm comparison on completion and re-invokes me.
+- ✅ **No-gate ablation DONE — MOAT-DECIDER answered:** A 75.7 / v1 70.3 / **v3-nogate 73.0** / **v2-gate 81.1**.
+  It's the GATE, not the turns: multi-turn feedback WITHOUT an independent gate (v3) only reaches blind-parity
+  (73 vs 75.7); the independent gate adds +8.1pp over the same loop. NOT significant at n=37/1-seed (direction
+  + clean ordering only) — needs 3 seeds + ~100 instances. `logos/FINDINGS_001.md` Finding 004.
 - I did **NOT** autonomously edit StratosAgent/ECP on an invented task — that's correctly yours to define (#3).
 - Receipts/findings committed as I go; this file stays current.
 
