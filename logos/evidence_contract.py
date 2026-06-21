@@ -54,10 +54,11 @@ def _validate_obligation(o, where):
     missing = [f for f in _OBLIGATION_FIELDS if f not in o]
     if missing:
         raise ContractError(f"{where}: obligation missing {missing}")
-    if not o["obligation_id"] or not o["requirement"]:
-        raise ContractError(f"{where}: obligation_id/requirement must be non-empty")
-    if not o["acceptable_evidence"]:
-        raise ContractError(f"{where} {o['obligation_id']}: acceptable_evidence empty")
+    if not isinstance(o["obligation_id"], str) or not isinstance(o["requirement"], str) \
+            or not o["obligation_id"] or not o["requirement"]:
+        raise ContractError(f"{where}: obligation_id/requirement must be non-empty strings")
+    if not isinstance(o["acceptable_evidence"], list) or not o["acceptable_evidence"]:
+        raise ContractError(f"{where} {o['obligation_id']}: acceptable_evidence must be a non-empty list")
     bad = set(o["acceptable_evidence"]) - EVIDENCE_KINDS
     if bad:
         raise ContractError(f"{where} {o['obligation_id']}: unknown evidence {bad}")
@@ -68,13 +69,24 @@ def validate(contract):
     missing = [f for f in _CONTRACT_FIELDS if f not in contract]
     if missing:
         raise ContractError(f"contract missing {missing}")
-    if not contract["task_id"] or not contract["objective"]:
-        raise ContractError("task_id/objective must be non-empty")
+    if contract.get("schema_version") != SCHEMA_VERSION:
+        raise ContractError(f"schema_version must be {SCHEMA_VERSION!r}")
+    if not isinstance(contract["task_id"], str) or not isinstance(contract["objective"], str) \
+            or not contract["task_id"] or not contract["objective"]:
+        raise ContractError("task_id/objective must be non-empty strings")
+    for f in ("requirements", "assumptions", "protected_paths", "permitted_paths",
+              "mandatory_obligations", "optional_obligations", "required_evidence_channels"):
+        if not isinstance(contract[f], list):
+            raise ContractError(f"{f} must be a list")
+    for f in ("resource_budget", "termination_policy"):
+        if not isinstance(contract[f], dict):
+            raise ContractError(f"{f} must be an object")
     if not contract["mandatory_obligations"]:
         raise ContractError("at least one mandatory obligation required")
     chans = set(contract["required_evidence_channels"])
     if not chans or (chans - EVIDENCE_CHANNELS):
         raise ContractError(f"bad required_evidence_channels {chans}")
+    _canonical(contract)   # enforce plain-JSON (raises ContractError on any custom/non-serializable value)
     ids = []
     for grp in ("mandatory_obligations", "optional_obligations"):
         for o in contract[grp]:
@@ -86,8 +98,13 @@ def validate(contract):
 
 
 def _canonical(contract):
-    return json.dumps({k: v for k, v in contract.items() if k != "contract_hash"},
-                      sort_keys=True, default=str)
+    """Deterministic canonical form for hashing. NO default= — a contract must be plain JSON data
+    (dict/list/str/num/bool/None); any custom object raises, so the hash can't silently collide or drift."""
+    try:
+        return json.dumps({k: v for k, v in contract.items() if k != "contract_hash"},
+                          sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+    except TypeError as e:
+        raise ContractError(f"contract is not plain JSON data (no custom objects allowed): {e}")
 
 
 def compute_hash(contract):
@@ -103,9 +120,34 @@ def freeze(contract):
 
 
 def verify_unmutated(contract):
-    """True iff the contract's content still matches its stamped hash (no candidate tampered with it)."""
+    """INTEGRITY ONLY: True iff content still matches the stamped hash. This detects accidental/in-process
+    mutation — it is NOT authenticity. Any code can re-freeze() a weakened contract to forge a valid hash.
+    AUTHENTICITY is established externally: the orchestrator freezes + `anchor`s the hash in the SEIF kernel
+    ledger BEFORE the candidate runs; the candidate runs sandboxed with NO write access to the anchored
+    contract; downstream gates verify with `verify_against_anchor(contract, ledger_hash)` — never trusting
+    the contract's self-reported field as proof of origin."""
     stamped = contract.get("contract_hash")
     return bool(stamped) and stamped == compute_hash(contract)
+
+
+def verify_against_anchor(contract, anchored_hash):
+    """AUTHENTICITY check: the contract's current content must hash to the value the orchestrator anchored
+    in the ledger before candidate generation. This is the trusted comparison (not the self-reported field)."""
+    return bool(anchored_hash) and compute_hash(contract) == anchored_hash
+
+
+def anchor(contract, kernel=None, task_id=None):
+    """Record the frozen contract_hash in the SEIF kernel ledger = the authenticity anchor. Returns the hash.
+    Call from the ORCHESTRATOR before the candidate runs; later verify via verify_against_anchor()."""
+    h = compute_hash(contract)
+    if kernel is not None:
+        try:
+            kernel.append_event("seif-orchestrator", "contract.anchored",
+                                {"contract_hash": h, "schema_version": contract.get("schema_version")},
+                                task_id=task_id or contract.get("task_id"))
+        except Exception:  # noqa: BLE001 - anchoring failure must not crash the run; caller checks return
+            pass
+    return h
 
 
 def build_contract(task_id, objective, mandatory_obligations, *, repository="", base_commit="",
@@ -116,9 +158,16 @@ def build_contract(task_id, objective, mandatory_obligations, *, repository="", 
                    human_approval_policy="protected paths + canonical merge require founder approval"):
     """Assemble, validate, and FREEZE an Evidence Contract. Protected paths always include the test/eval/
     scorer surfaces so a candidate can never satisfy obligations by editing them (reward-hacking defense)."""
+    # Declared protected surface (enforcement is a HARD gate at oracle L0 — declaration alone is not a
+    # control). Covers test code, test/runner config, CI, build/dep metadata, and the eval/scorer surface,
+    # so a candidate can't satisfy obligations by editing what grades it.
     protected = sorted(set((protected_paths or []) + [
-        "tests/", "test/", "conftest.py", "swebench/", "run-tests.mjs", "logos/harness.py",
-        "logos/evidence_oracle.py", "*.gold", "test_patch"]))
+        "tests/", "test/", "conftest.py", "*/conftest.py", "test_*.py", "*_test.py",
+        "swebench/", "run-tests.mjs", "logos/harness.py", "logos/evidence_oracle.py",
+        "logos/project_harness.py", "*.gold", "test_patch",
+        "pyproject.toml", "setup.cfg", "setup.py", "tox.ini", "pytest.ini",
+        ".github/", ".github/workflows/", "requirements*.txt", "package.json", "package-lock.json",
+        "yarn.lock", "sitecustomize.py", ".ci/", "Makefile"]))
     contract = {
         "task_id": task_id, "objective": objective, "repository": repository, "base_commit": base_commit,
         "requirements": list(requirements or []), "assumptions": list(assumptions or []),
@@ -149,11 +198,22 @@ def _selftest():
                        repository="psf/requests", base_commit="abc123")
     assert validate(c) and verify_unmutated(c), "fresh contract must validate + verify"
     assert c["contract_hash"], "must be hashed"
-    # protected paths auto-include the test/scorer surfaces (reward-hacking defense)
-    assert any(p.startswith("tests") for p in c["protected_paths"]) and "swebench/" in c["protected_paths"]
-    # tamper detection: mutate an obligation -> hash no longer matches
+    # protected paths auto-include test/CI/build/scorer surfaces (reward-hacking defense)
+    for must in ("tests/", "*/conftest.py", "swebench/", "pyproject.toml", ".github/workflows/"):
+        assert must in c["protected_paths"], f"protected paths must include {must}"
+    # authenticity anchor: the trusted hash is what the orchestrator anchored (not the self-reported field)
+    anchored = anchor(c)
+    assert verify_against_anchor(c, anchored), "fresh contract must match its anchor"
+    # tamper detection: mutate an obligation -> both integrity and anchor checks fail
     c["mandatory_obligations"][0]["requirement"] = "weakened"
-    assert not verify_unmutated(c), "tamper must be detected"
+    assert not verify_unmutated(c), "tamper must break integrity hash"
+    assert not verify_against_anchor(c, anchored), "tamper must break the anchor check"
+    # non-plain-JSON content is rejected (deterministic hashing; no default=str collisions)
+    try:
+        bad = build_contract("t", "o", [o1]); bad["requirements"] = [object()]; validate(bad)
+        raise AssertionError("should reject non-JSON content")
+    except ContractError:
+        pass
     # validation catches a missing field
     try:
         bad = {k: v for k, v in build_contract("t", "o", [o1]).items() if k != "objective"}
