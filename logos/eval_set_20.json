@@ -1,0 +1,57 @@
+{
+  "instances": [
+    "pylint-dev__pylint-4551",
+    "pylint-dev__pylint-6386",
+    "pylint-dev__pylint-4604",
+    "pylint-dev__pylint-4661",
+    "pylint-dev__pylint-6528",
+    "pylint-dev__pylint-8898",
+    "pytest-dev__pytest-5840",
+    "pytest-dev__pytest-8399",
+    "psf__requests-1142",
+    "psf__requests-1724",
+    "psf__requests-1766",
+    "psf__requests-1921",
+    "psf__requests-2317",
+    "psf__requests-2931",
+    "psf__requests-5414",
+    "psf__requests-6028",
+    "pylint-dev__pylint-4970",
+    "pylint-dev__pylint-6903",
+    "pylint-dev__pylint-7080",
+    "pylint-dev__pylint-7277"
+  ],
+  "strata": {
+    "single": [
+      "psf__requests-1142",
+      "psf__requests-1724",
+      "psf__requests-1766",
+      "psf__requests-1921",
+      "psf__requests-2317",
+      "psf__requests-2931",
+      "psf__requests-5414",
+      "psf__requests-6028",
+      "pylint-dev__pylint-4970",
+      "pylint-dev__pylint-6903",
+      "pylint-dev__pylint-7080",
+      "pylint-dev__pylint-7277"
+    ],
+    "large": [
+      "pylint-dev__pylint-4551",
+      "pylint-dev__pylint-6386"
+    ],
+    "multi": [
+      "pylint-dev__pylint-4604",
+      "pylint-dev__pylint-4661",
+      "pylint-dev__pylint-6528",
+      "pylint-dev__pylint-8898",
+      "pytest-dev__pytest-5840",
+      "pytest-dev__pytest-8399"
+    ]
+  },
+  "counts": {
+    "single": 29,
+    "large": 2,
+    "multi": 6
+  }
+}

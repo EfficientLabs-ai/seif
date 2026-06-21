@@ -9,3 +9,8 @@ logos/preds/
 *.sanity_gold.json
 gold.*.json
 arm_a_*.json
+arm_b_*.json
+*.score_*.json
+*.armb_*.json
+logos/*.json
+!logos/eval_set_20.json

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evidence-contract",
+  "title": "SEIF Evidence Contract v0.2",
+  "description": "Frozen, hashed set of proof obligations compiled BEFORE any candidate is generated. The stopping rule = all mandatory obligations have passing evidence AND no protected invariant failed AND no unresolved dependency remains — NOT 'the model's reproduction turned green'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id", "objective", "repository", "base_commit", "requirements", "assumptions",
+    "protected_paths", "permitted_paths", "mandatory_obligations", "optional_obligations",
+    "required_evidence_channels", "test_isolation_policy", "resource_budget", "termination_policy",
+    "human_approval_policy", "schema_version", "contract_hash"
+  ],
+  "properties": {
+    "task_id": {"type": "string", "minLength": 1},
+    "objective": {"type": "string", "minLength": 1},
+    "repository": {"type": "string"},
+    "base_commit": {"type": "string"},
+    "requirements": {"type": "array", "items": {"type": "string"}},
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "protected_paths": {"type": "array", "items": {"type": "string"}},
+    "permitted_paths": {"type": "array", "items": {"type": "string"}},
+    "mandatory_obligations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/obligation"}},
+    "optional_obligations": {"type": "array", "items": {"$ref": "#/$defs/obligation"}},
+    "required_evidence_channels": {
+      "type": "array", "minItems": 1,
+      "items": {"type": "string", "enum": ["L0","L1","L2","L3","L4","L5","L6","L7","L8","L9","L10"]}
+    },
+    "test_isolation_policy": {"type": "string"},
+    "resource_budget": {"type": "object"},
+    "termination_policy": {"type": "object"},
+    "human_approval_policy": {"type": "string"},
+    "schema_version": {"type": "string"},
+    "contract_hash": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "obligation_id", "requirement", "source", "preconditions", "expected_effect",
+        "acceptable_evidence", "rejection_condition", "unknown_condition"
+      ],
+      "properties": {
+        "obligation_id": {"type": "string", "minLength": 1},
+        "requirement": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "description": "issue|tests|architecture|dependency_graph|policy"},
+        "preconditions": {"type": "array", "items": {"type": "string"}},
+        "expected_effect": {"type": "string"},
+        "acceptable_evidence": {
+          "type": "array", "minItems": 1,
+          "items": {"type": "string", "enum": [
+            "regression_tests", "candidate_blind_test", "property_test", "metamorphic_test",
+            "mutation_test", "differential_behavior", "affected_test_slice", "protected_path_gate",
+            "diff_integrity_check", "compile", "type_check", "static_analysis", "security_scan",
+            "performance_gate", "architecture_invariant", "human_approval"
+          ]}
+        },
+        "rejection_condition": {"type": "string"},
+        "unknown_condition": {"type": "string"}
+      }
+    }
+  }
+}
