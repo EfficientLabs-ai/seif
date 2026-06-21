@@ -23,6 +23,16 @@
 - content-engine **PR #1 merged** (content factory).
 
 ## 🤖 Executing autonomously tonight (no gate needed)
-- Build + Codex-review the `/seif` driver; dogfood on StratosAgent (→ PRs land in queue item #3).
-- Launch the **no-gate ablation** + **seed** runs (firms up gate-vs-just-more-turns); analyze on completion.
-- Keep findings + receipts committed; update this file as items arise.
+- ✅ `/seif` driver **built + Codex-safety-reviewed + PROVEN end-to-end** (synthetic repo: generate → real
+  tests pass → landed on a branch → receipt; **main left untouched**). P1 functionally complete.
+- ✅ Harness proven on **StratosAgent's real suite** (6/14 passing from HEAD — your agent has 8 failing
+  suites; flagged as a candidate for the first real `/seif` task, item #3).
+- 🔄 **No-gate ablation RUNNING** (arm_b_v3_nogate, 37 instances) — the moat-decider: does the independent
+  gate help, or is it just "more turns"? Auto-scores the 4-arm comparison on completion and re-invokes me.
+- I did **NOT** autonomously edit StratosAgent/ECP on an invented task — that's correctly yours to define (#3).
+- Receipts/findings committed as I go; this file stays current.
+
+## 📌 First decision when you're back
+Pick the **first real `/seif` task** (item #3). Strong candidate, already surfaced by evidence: point `/seif`
+at one of StratosAgent's **8 failing test suites** — it'll generate a fix, verify against the real test,
+and open a branch/PR for you to merge. That's the cleanest "stack operating on real EFL code" proof.
