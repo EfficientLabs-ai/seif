@@ -94,6 +94,26 @@ the full-pipeline-vs-blind comparison.
 **Next for a publishable claim:** 3 seeds × 20 (kills stochastic noise), then more instances + heavier repos.
 Optional ablation: "multi-turn feedback, no gate" to separate extra-turns from the gate itself.
 
+## Finding 003 — the result holds at n=37 (2026-06-21)
+Scaled to all 37 light-repo instances (superset of the 20), official scorer, 1 seed:
+
+| arm | resolved | rate | 95% CI (Wilson) |
+|---|---|---|---|
+| A — blind | 28/37 | 75.7% | [59.9, 86.6] |
+| v1 — feedback + stop-on-green | 26/37 | 70.3% | [54.2, 82.5] |
+| **v2 — feedback + independent gate** | **30/37** | **81.1%** | [65.8, 90.5] |
+
+McNemar (exact): **v1→v2 = +10.8pp** (v2-only=4, v1-only=0 — STILL a strict superset, p=0.125);
+**A→v2 = +5.4pp** (v2-only=3, A-only=1, p=0.625); A→v1 = −5.4pp.
+
+**Robust reads (what survived doubling n):**
+1. **v2 strictly dominates v1 at n=37 too** (superset, +10.8pp). The independent gate's value is robust — this is the load-bearing, repeatable finding.
+2. **v2 is the best arm and beats blind by ~5pp at BOTH n=20 (+5.0) and n=37 (+5.4)** — consistent direction, still NOT significant (p=0.625). A ~5pp effect needs ~100+ instances; expected.
+3. **Honesty correction to Finding 001:** v1's dramatic n=20 crash (55%) was partly small-sample noise — at n=37 naive feedback is 70.3% (−5.4pp vs blind, not −15). The robust claim is "self-check ≤ blind, and the **gate > both**," NOT "naive feedback craters."
+4. Degradation curve still unreadable: multi (n=6) / large (n=2) buckets too small — needs heavier repos (roadmap P2), as flagged.
+
+**Defensible claim now:** *"An independent completeness gate strictly dominates naive self-verification (+10.8pp, strict superset, robust across n=20 and n=37) and holds a consistent ~5pp edge over blind one-shot — not yet statistically significant (p=0.625); significance needs 3 seeds + ~100 instances."*
+
 ## Reproduce
 ```
 /home/neo/logos-venv/bin/python logos/analyze.py --score   # scores both arms, writes logs/AB_REPORT.md
