@@ -82,11 +82,16 @@ def evaluate(contract, candidate, channel_runners=None):
 
     hard_fail = [r["channel"] for r in results.values() if r["status"] == FAIL and r["hard"]]
     required = list(contract.get("required_evidence_channels", []))
+    # defend-in-depth: a degenerate contract (no obligations / no required channels) makes the all()
+    # checks vacuously true -> it must NEVER be ACCEPTABLE (there is nothing actually proven).
+    degenerate = (not contract.get("mandatory_obligations")) or (not required)
     required_ok = all(results.get(c, {}).get("status") == PASS for c in required)
     coverage_ok = all(c["covered"] for c in coverage)
 
     if hard_fail:
         verdict = REJECTED
+    elif degenerate:
+        verdict = INSUFFICIENT_EVIDENCE     # nothing to prove / no required evidence -> not ACCEPTABLE
     elif required_ok and coverage_ok:
         verdict = ACCEPTABLE
     else:
@@ -95,6 +100,8 @@ def evaluate(contract, candidate, channel_runners=None):
     reasons = []
     if hard_fail:
         reasons.append(f"hard gate FAILED: {hard_fail} (unappealable)")
+    if degenerate:
+        reasons.append("degenerate contract: no mandatory obligations and/or no required evidence channels")
     if not required_ok:
         reasons.append("a required evidence channel did not PASS")
     if not coverage_ok:
