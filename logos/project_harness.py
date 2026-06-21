@@ -32,10 +32,28 @@ def _sha(s):
     return hashlib.sha256((s or "").encode()).hexdigest()[:16]
 
 
-def checkpoint(repo, base="HEAD"):
-    """Ephemeral, detached git worktree from `base` — the clean room. Returns its path."""
+DEP_DIRS = ("node_modules", ".venv", "venv", "vendor", ".yarn", ".tox")
+
+
+def checkpoint(repo, base="HEAD", link_deps=True):
+    """Ephemeral, detached git worktree from `base` — the clean room. Returns its path.
+
+    git worktree only checks out TRACKED files, so gitignored installed-dependency dirs (node_modules,
+    .venv, …) are absent — which makes any real repo's tests fail with import errors that LOOK like code
+    bugs but aren't. We symlink those dep dirs from the source repo (read-only during tests) so the
+    clean room reflects the repo's actual runnable state. (Discovered dogfooding StratosAgent: its
+    14/14 suites "failed" in a bare worktree purely because node_modules was missing.)"""
     wt = tempfile.mkdtemp(prefix="seif-wt-")
     subprocess.run(["git", "-C", repo, "worktree", "add", "--quiet", "--detach", wt, base], check=True)
+    if link_deps:
+        for d in DEP_DIRS:
+            src = os.path.join(repo, d)
+            dst = os.path.join(wt, d)
+            if os.path.isdir(src) and not os.path.exists(dst):
+                try:
+                    os.symlink(src, dst)
+                except OSError:
+                    pass
     return wt
 
 
