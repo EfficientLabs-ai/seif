@@ -7,6 +7,7 @@
 ## ⏳ Awaiting your call
 | # | Item | Why gated | Action for you |
 |---|---|---|---|
+| 0 | **SEIF PR #5** (eval harness + Agent Harness + /seif + master architecture, ~19 commits) | merge to main | review + merge: `gh pr merge 5 --merge` (EfficientLabs-ai/seif) |
 | 1 | **content-engine PR #2** (claim-discipline gate + CI) | merge to main | review + merge: `gh pr merge 2 --merge` (Neo-The-Architect/content-engine) |
 | 2 | **Gemini API key** still 403 (unrestricted-key) | secret | restrict/mint in Cloud Console → unlocks the multi-model verifier panel (Codex+Gemini) |
 | 3 | **`/seif` dogfood PR(s) on StratosAgent** (autonomous tonight) | merge to main | I'll open branch/PRs; you review + merge the good ones |
