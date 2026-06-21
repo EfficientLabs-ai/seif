@@ -14,7 +14,7 @@
 ## ⏳ Awaiting your call
 | # | Item | Why gated | Action for you |
 |---|---|---|---|
-| 0 | **SEIF PR #6** — v0.2 Evidence Oracle (WP-D) + Assumption Graph (WP-G) + Trajectory Summary (WP-F) + Governed Integration Fabric capability layer | merge to main | review + merge: `gh pr merge 6 --merge` (EfficientLabs-ai/seif) |
+| 0 | **SEIF PR #7** — v0.2 completion: candidate-blind Test Architect (WP-B) + MCP profile (WP-H) + claims/pre-registration/non-goals docs | merge to main | review + merge: `gh pr merge 7 --squash` (EfficientLabs-ai/seif) · (PR #6 already merged) |
 | 1 | **First real `/seif` task** | you pick the work | name a genuine feature/bug (Stratos is green — no failing suite to auto-target); I run the full loop → branch/PR + receipt |
 | 2 | **Composio (self-hosted) + Nango** for Stratos integrations | secrets/keys | provide keys when we reach P3 (Stratos-as-runtime) |
 | 3 | **Hard branch protection** on EfficientLabs-ai/seif | org/plan | enable ruleset (already applied on content-engine) |
