@@ -39,8 +39,10 @@ evidence + signed receipts + an independent gate** (MEASURED: 81% gated vs 70% b
 
 ¹ "rollback" = discard the ephemeral worktree back to base HEAD, not restore a stored *healthy snapshot*.
 ² freezes the proof *obligations* + ledger anchor, not a runnable system snapshot.
-³ exists **three divergent ways** and is **not unified**: seif (file-L1 + JSONL-episodic-L2 + graphify-L3),
-  StratosAgent (in-memory graph-query; "L1/L2/L3" are doc-context folders), Atmosphere (LanceDB vector + FTS5).
+³ exists **three divergent ways** and is **not unified**: seif (L1 **Redis live** via the dedicated
+  `seif-redis` container — localhost-only, auto-detected via `~/.config/seif/redis.url`, file fallback when
+  absent — + JSONL-episodic-L2 + graphify-L3), StratosAgent (in-memory graph-query; "L1/L2/L3" are
+  doc-context folders), Atmosphere (LanceDB vector + FTS5). The unification contract (this PR) is the shared target.
 ⁴ ingredients exist (auto-rollback, per-failure lessons, trajectory summaries) but **nothing consumes them at
   runtime to avoid a failure CLASS** — e.g. `logos/seif_loop.py` fetches prior attempts and only *counts* them;
   the real failure-class fixes to date were human code changes, not feed-forward.
