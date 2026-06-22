@@ -19,6 +19,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import project_harness as H   # noqa: E402
 import integrity_guard as IG  # noqa: E402
+import checkpoint as CP       # noqa: E402  (L4: register verified states / record failure forensics)
 
 CLAUDE = "/home/neo/.local/bin/claude"
 
@@ -110,6 +111,13 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
             H.discard(repo, wt)                                   # ATMS rollback — main untouched
             why = {"integrity_violation": "integrity_violation",
                    "no_change": "no_change"}.get((result or {}).get("outcome"), "tests")
+            # ASRS forensics: record what broke + the rollback target (last healthy checkpoint), so the
+            # loop can avoid repeating the failure class. Best-effort — never alters the gate's verdict.
+            try:
+                CP.record_failure(repo, broken_patch_sha=H._sha(patch), failure_reason=why,
+                                  affected_modules=IG.changed_files(patch or ""), triggered_by=task[:200])
+            except Exception:  # noqa: BLE001
+                pass
             print(f"[/seif] NOT VERIFIED ({why}) — rolled back. receipt h={rec.get('h')}")
             return {"accepted": False, "receipt": rec, "patch": patch, "reason": why, "integrity": integrity}
         # success: land on a branch (never main), PR if a remote exists
@@ -121,6 +129,21 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                    f"seif: {task[:72]}\n\nEvidence: tests pass (exit 0). Receipt {rec.get('h')}.\n"
                    f"Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"]):
             subprocess.run(c, check=True, capture_output=True)
+        # L4: register this VERIFIED state as a healthy checkpoint (commit + proof + context signature),
+        # chained to the prior healthy one — turns the gate's success into a promotable known-good state.
+        # Best-effort: checkpoint bookkeeping must never break a verified landing.
+        checkpoint = None
+        try:
+            commit = subprocess.run(["git", "-C", wt, "rev-parse", "HEAD"],
+                                    capture_output=True, text=True).stdout.strip()
+            checkpoint = CP.create(
+                repo, task[:80], commit=commit,
+                proof={"outcome": "pass", "receipt": rec.get("h"), "test_cmd": test_cmd,
+                       "exit_code": (result or {}).get("exit_code")},
+                context={"task": task, "files_changed": IG.changed_files(patch or "")},
+                parent=(CP.last_healthy(repo) or {}).get("id"))
+        except Exception:  # noqa: BLE001
+            checkpoint = None
         # honest landing state: 'accepted' = tests passed (true regardless); 'landed' = push+PR actually succeeded
         pr_url, landed = None, False
         if make_pr and _has_remote(repo):
@@ -136,10 +159,13 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                 else:
                     pr_url = f"(branch pushed; pr create rc={pr.returncode}: {pr.stderr[-160:]})"
         where = pr_url or ("local branch only (no remote)" if not make_pr or not _has_remote(repo) else None)
-        print(f"[/seif] VERIFIED ✓  branch={branch}  landed={landed}  where={where}  receipt h={rec.get('h')}")
+        cp_id = (checkpoint or {}).get("id")
+        print(f"[/seif] VERIFIED ✓  branch={branch}  landed={landed}  where={where}  "
+              f"receipt h={rec.get('h')}  checkpoint={cp_id}")
         # leave the worktree in place so the founder can inspect; caller/founder removes after merge
-        return {"accepted": True, "landed": landed, "branch": branch, "pr": pr_url,
-                "worktree": wt, "receipt": rec, "patch": patch, "reason": "verified", "integrity": integrity}
+        return {"accepted": True, "landed": landed, "branch": branch, "pr": pr_url, "worktree": wt,
+                "receipt": rec, "patch": patch, "reason": "verified", "integrity": integrity,
+                "checkpoint": checkpoint}
     except Exception:
         H.discard(repo, wt)
         raise
@@ -166,6 +192,8 @@ def _selftest():
     import textwrap
     global _claude_edit
     repo = tempfile.mkdtemp(prefix="seif-run-")
+    CP.LEDGER = os.path.join(repo, "_checkpoints.jsonl")          # temp registries — don't touch the real ledger
+    CP.FAILURES = os.path.join(repo, "_failures.jsonl")
     g = lambda *a: subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", *a],
                                   check=True, capture_output=True)
     subprocess.run(["git", "init", "-q", repo], check=True)
@@ -190,6 +218,10 @@ def _selftest():
         r1 = seif_run(repo, "make tests pass", cmd, budget=1, base="HEAD", make_pr=False)
         assert not r1["accepted"] and r1["reason"] == "integrity_violation", r1
         assert any(h["file"].endswith("test_calc.py") for h in r1["integrity"]["hard"]), r1["integrity"]
+        # rejection recorded ASRS failure forensics (no checkpoint created for an unverified state)
+        fails = CP._read(CP.FAILURES)
+        assert fails and fails[-1]["failure_reason"] == "integrity_violation", fails
+        assert CP.last_healthy(repo) is None, "no checkpoint may exist before any verified run"
 
         # case 2: HONEST source fix -> accepted, lands on a local branch (no remote)
         def honest(wt, *a, **k):
@@ -198,10 +230,17 @@ def _selftest():
         _claude_edit = honest
         r2 = seif_run(repo, "fix add", cmd, budget=1, base="HEAD", make_pr=False)
         assert r2["accepted"] and r2["reason"] == "verified", r2
+        # L4: the verified run registered a healthy checkpoint (commit + proof + context)
+        assert r2["checkpoint"] and r2["checkpoint"]["proof"]["outcome"] == "pass", r2["checkpoint"]
+        lh = CP.last_healthy(repo)
+        assert lh and lh["id"] == r2["checkpoint"]["id"], "verified run must become the last healthy checkpoint"
+        assert "calc.py" in lh["context"]["files_changed"], lh["context"]
+        assert CP.verify_chain(CP.LEDGER)[0], "checkpoint chain must verify"
         H.discard(repo, r2["worktree"])
         # main never touched (still the buggy version)
         assert open(os.path.join(repo, "calc.py")).read().strip().endswith("a - b"), "main untouched"
-        print("seif_run selftest PASS — integrity gate REJECTS test-editing, ACCEPTS honest source fix; main untouched")
+        print("seif_run selftest PASS — integrity gate REJECTS test-editing, ACCEPTS honest fix; "
+              "verified run mints a healthy L4 checkpoint; rejection records ASRS forensics; main untouched")
     finally:
         _claude_edit = orig
         import shutil

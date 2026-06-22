@@ -29,7 +29,7 @@ evidence + signed receipts + an independent gate** (MEASURED: 81% gated vs 70% b
 | 2 | Hash-chained receipts / truth ledger | **BUILT** | **BUILT** (PQC-signed) | **BUILT** (PQC-signed) |
 | 3 | Evidence Contract / freeze-before-change | **BUILT**² | PARTIAL (write-ahead intent) | ABSENT (post-hoc bind) |
 | 4 | Tripartite Memory (L1/L2/L3) | PARTIAL³ | PARTIAL³ | PARTIAL³ |
-| 5 | **L4 Checkpoint Engine** | ABSENT | ABSENT | ABSENT |
+| 5 | **L4 Checkpoint Engine** | **BUILT**⁷ | ABSENT | ABSENT |
 | 6 | **ASRS self-healing feed-forward** | PARTIAL⁴ | PARTIAL⁴ | PARTIAL⁴ |
 | 7 | **Checkpoint-aware delta planning** | ABSENT | ABSENT | ABSENT |
 | 8 | Integrity / reward-hacking gate | **BUILT** | PARTIAL (trace-integrity) | PARTIAL |
@@ -48,6 +48,13 @@ evidence + signed receipts + an independent gate** (MEASURED: 81% gated vs 70% b
   cost>fallback) but **no model is actually called**, and **no NIM/Nemotron/Qwen/DeepSeek adapter exists**.
 ⁶ `atmosphere-core/.../mesh-node.mjs`: DHT, proof-of-capacity hash-chain, leader-election. Settlement is MOCK
   (PaymentEngine mock; Solana never broadcast).
+⁷ `logos/checkpoint.py` (built): proof-gated create (refuses unverified states), hash-chained lineage,
+  `last_healthy`, `restore` (materialize a verified commit into a worktree), ASRS `record_failure` forensics.
+  **Wired into the gate** — every VERIFIED `seif_run` registers a healthy checkpoint; every rejection records
+  forensics. NOTE: **checkpoint-aware delta planning (row 7) is still ABSENT**, and the live loop records
+  forensics + rolls back to BASE (auto-restore-to-last-healthy is the next increment), so the full
+  "self-healing versioned intelligence" is PARTIAL — the engine + creation-on-success + the rollback
+  primitives are real; LOGOS planning against checkpoints is not yet.
 
 ## 3. Net-new build priorities (what the vision actually adds, cheapest-first)
 1. **Close the ASRS feed-forward loop** *(cheapest, highest leverage)* — recorded forensics → fed into the
@@ -55,8 +62,9 @@ evidence + signed receipts + an independent gate** (MEASURED: 81% gated vs 70% b
    the prior reusable lessons / prohibited-reuse for a `task_id` into the runner prompt (today they're fetched
    and discarded). Make it MEASURED (does it cut repeat failures?).
 2. **Unify Tripartite Memory** — one contract the three repos share, instead of three divergent partials.
-3. **L4 Checkpoint Engine** — named, promotable/rollback verified snapshots (state+proof+context signature),
-   beyond a bare worktree. Then **checkpoint-aware delta planning** (LOGOS emits deltas, not full rewrites).
+3. ~~**L4 Checkpoint Engine**~~ — **DONE** (`logos/checkpoint.py`, wired into `seif_run`). NEXT here:
+   **checkpoint-aware delta planning** (LOGOS emits deltas vs the last checkpoint, not full rewrites) +
+   **auto-restore-to-last-healthy** in the live loop (today: forensics recorded + rollback to base).
 4. **NIM provider adapters** into the existing router seam — model diversity without becoming a model company.
 
 LOGOS=checkpoint-aware planner · SEIF=checkpoint validator (legal transitions, rollback on violation) ·
