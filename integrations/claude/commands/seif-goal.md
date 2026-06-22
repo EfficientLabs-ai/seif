@@ -14,12 +14,13 @@ specific feature/bug rather than a backlog sweep.
    ground truth), and a precise task description that ends with "Edit the source only; do NOT edit tests."
    If the goal is ambiguous or needs a decision only the founder can make, **stop and ask** — do not invent scope.
 
-2. **Recall before acting.** From `~/seif`: `from memory.tripartite import Memory; m=Memory()` →
-   `m.episodic.query(task_id=...)` for prior attempts, and `m.graph(repo).impact(<file>)` for blast-radius.
-   Fold prior lessons into the task text so you don't repeat a dead end.
+2. **Recall before acting.** ALWAYS use the **`logos-venv`** interpreter (`/home/neo/logos-venv/bin/python`)
+   for SEIF python — it has the Redis client so L1 memory is **Redis** (bare `python3` falls back to file).
+   From `~/seif`: `from memory.tripartite import Memory; m=Memory()` → `m.episodic.query(task_id=...)` for
+   prior attempts, and `m.graph(repo).impact(<file>)` for blast-radius. Fold prior lessons into the task text.
 
 3. **Run the gate:**
-   `cd ~/seif && python3 logos/seif_run.py --repo <repo> --task "<task>" --test "<test_cmd>" --budget 3`
+   `cd ~/seif && /home/neo/logos-venv/bin/python logos/seif_run.py --repo <repo> --task "<task>" --test "<test_cmd>" --budget 3`
    This clean-rooms a worktree, lets the model edit, runs the REAL tests, enforces the integrity guard, and
    on success lands a branch + opens a PR + mints a receipt. On failure it rolls back (ATMS) — main untouched.
 
