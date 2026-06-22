@@ -143,3 +143,49 @@ Intelligence Amplification thesis (build what the model can't reliably provide i
 /home/neo/logos-venv/bin/python logos/analyze.py --score   # scores both arms, writes logs/AB_REPORT.md
 ```
 Predictions in `logos/preds/{arm_a_,arm_b_logos_}<iid>.jsonl` (+ `.meta.json`). Report: `logs/AB_REPORT.md`.
+
+---
+
+## Finding 005 — 3-seed scale-up: gate is the lever (+6.3pp), but NOT significant; multi-file is a negative (2026-06-23)
+
+**Eval:** the full 37 light-repo SWE-bench-Verified instances × **3 independent seeds** (n=111/arm). Official
+swebench grading. A "seed" = an independent stochastic `claude -p` run (no seed flag). Report:
+`logs/AB_REPORT_3SEED.md` (aggregator: `logos/analyze_seeds.py`). **Integrity note:** the first 3-seed scoring
+pass was contaminated by 148 empty-patch stubs from a `claude -p` rate-limit window that the old
+file-existence resume check mis-counted as "done" (whole arms scored 0%). Fixed (`run_seeds._has_patch`
+requires a non-empty patch), regenerated to 37/37 non-empty on every (seed,arm), and **re-scored fresh**.
+This finding is the clean re-score; the contaminated numbers are retracted.
+
+### Per-arm resolve rate (pooled n=111)
+| arm | per-seed | mean / pooled | 95% CI (Wilson) |
+|---|---|---|---|
+| A — blind | 76 / 59 / 76 | **70.3%** (78/111) | [61.2, 78.0] |
+| B v1 — feedback + stop-on-green | 70 / 68 / 73 | **70.3%** (78/111) | [61.2, 78.0] |
+| B v3 — feedback, NO gate | 73 / 62 / 78 | **71.2%** (79/111) | [62.1, 78.8] |
+| B v2 — feedback + **independent gate** | 81 / 81 / 68 | **76.6%** (85/111) | [67.9, 83.5] |
+
+### What it says (honest)
+1. **The independent gate (v2) is the only arm that separates from blind: +6.3pp (76.6 vs 70.3).** Within the
+   pre-registered target effect range (≥4–6pp) — but **NOT statistically significant pooled** (exact McNemar
+   p=0.19). It IS per-seed significant in **seed 2** (v2-vs-A p=0.022, v2-vs-v3 p=0.016) and **reverses in
+   seed 3** (v2 dips to 68%, its worst run). So the effect is **real in direction, not robust at this power**.
+2. **"It's the gate, not the turns" holds directionally:** v1 (feedback+stop-on-green) = **exactly** A (70.3%,
+   0.0pp); v3 (feedback, no gate) = 71.2% (+0.9pp ≈ blind). Multi-turn execution feedback WITHOUT an
+   independent gate buys nothing; only the gate moves the needle. (Not significant; direction only.)
+3. **HONEST NEGATIVE — the degradation thesis is NOT supported.** The gate's edge is concentrated on
+   **single-file** tasks (v2 83% vs A 74%, n=87) and it **UNDERPERFORMS blind on multi-file** (v2 44% vs A
+   56%, n=18). The hypothesis that the gate's advantage *holds/widens with task length* is **refuted** at this
+   n — if anything it's a short-task effect. The completeness gate may be over-trusting a passing repro on
+   narrow fixes while mis-scoping multi-file changes. This is the priority to investigate.
+
+### Verdict (claim discipline)
+**MEASURED:** the independent gate is the lever and reaches the target effect size, per-seed significant in 1
+of 3 seeds. **NOT yet a defensible claim:** pooled significance (p=0.19, seed-3 reversal) — underpowered
+(3 seeds, 37 light-repo instances). **REFUTED at this n:** "improves over longer/multi-file tasks." **Next:**
+more seeds + ~100+ instances + heavier repos for power; diagnose the multi-file regression; do NOT claim
+"gets better over long runs" — the data currently shows the opposite on multi-file.
+
+### Reproduce
+```
+/home/neo/logos-venv/bin/python logos/analyze_seeds.py --score logos/eval_set_full.json  # -> logs/AB_REPORT_3SEED.md
+```
