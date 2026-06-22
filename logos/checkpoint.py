@@ -154,6 +154,25 @@ def record_failure(repo, *, broken_patch_sha, failure_reason, affected_modules=N
     return _append_chained(FAILURES, rec)
 
 
+def _failures(repo):
+    """Failure records for a repo, oldest→newest. Filter by ABSOLUTE path like lineage(); fall back to
+    basename for legacy records without repo_path."""
+    ap, k = os.path.abspath(repo), _repo_key(repo)
+    return [f for f in _read(FAILURES)
+            if f.get("repo_path") == ap or (f.get("repo_path") is None and f.get("repo") == k)]
+
+
+def status(repo):
+    """A readable snapshot of a repo's checkpoint state: how many checkpoints, the current rollback target
+    (last_healthy, or None), and the most recent failure forensics (newest first, capped at 3)."""
+    return {
+        "repo": _repo_key(repo),
+        "count": len(lineage(repo)),
+        "last_healthy": (last_healthy(repo) or None),
+        "recent_failures": _failures(repo)[-3:][::-1],
+    }
+
+
 def verify_chain(path=None):
     """Validate the hash-chain of a registry (checkpoints by default). Returns (ok: bool, detail: str)."""
     path = path or LEDGER
@@ -243,5 +262,22 @@ if __name__ == "__main__":
     import sys
     if "--selftest" in sys.argv:
         _selftest()
+    elif "--status" in sys.argv:
+        i = sys.argv.index("--status")
+        if i + 1 >= len(sys.argv):
+            print("usage: checkpoint.py --status <repo>")
+            sys.exit(2)
+        s = status(sys.argv[i + 1])
+        lh = s["last_healthy"]
+        print(f"repo: {s['repo']}")
+        print(f"checkpoints: {s['count']}")
+        if lh:
+            print(f"last_healthy: {lh.get('id')}  {lh.get('label')}  ({lh.get('commit')})  {lh.get('ts')}")
+        else:
+            print("last_healthy: none")
+        fails = s["recent_failures"]
+        print(f"recent_failures ({len(fails)}):")
+        for f in fails:
+            print(f"  {f.get('ts')}  {f.get('failure_reason')}  (rollback_to={f.get('rollback_to')})")
     else:
-        print("usage: checkpoint.py --selftest   |   import: from logos import checkpoint")
+        print("usage: checkpoint.py --selftest | --status <repo>   |   import: from logos import checkpoint")

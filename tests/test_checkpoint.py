@@ -97,6 +97,24 @@ class CheckpointTest(unittest.TestCase):
         f = CP.record_failure(self.repo, broken_patch_sha="x", failure_reason="boom")
         self.assertIsNone(f["rollback_to"])
 
+    # ---- status snapshot ----
+    def test_status_empty_repo(self):
+        s = CP.status(self.repo)
+        self.assertEqual(s["repo"], CP._repo_key(self.repo))
+        self.assertEqual(s["count"], 0)
+        self.assertIsNone(s["last_healthy"])
+        self.assertEqual(s["recent_failures"], [])
+
+    def test_status_after_create_and_failure(self):
+        cp = CP.create(self.repo, "good", commit=self.c1, proof={"outcome": "pass", "receipt": "r1"})
+        CP.record_failure(self.repo, broken_patch_sha="deadbeef", failure_reason="type error")
+        s = CP.status(self.repo)
+        self.assertEqual(s["count"], 1)
+        self.assertIsNotNone(s["last_healthy"])
+        self.assertEqual(s["last_healthy"]["id"], cp["id"])
+        self.assertEqual(len(s["recent_failures"]), 1)
+        self.assertEqual(s["recent_failures"][0]["failure_reason"], "type error")
+
     # ---- hash-chain integrity ----
     def test_chain_verifies_and_detects_tamper(self):
         CP.create(self.repo, "v1", commit=self.c1, proof={"outcome": "pass", "receipt": "r1"})
