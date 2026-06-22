@@ -47,7 +47,7 @@ verify by ancestry. My fault (base-targeting); the discipline caught it before i
 | 0 | **SEIF PR #8** — /seif driver bug-fixes (dep-symlink leak + gh -R slug) found dogfooding #2 | merge to main | review + merge: `gh pr merge 8 --squash` (EfficientLabs-ai/seif) |
 | 0b | **SEIF Phase-1 PR** — Tripartite Memory + integrity gate + loop orchestrator + staged commands | merge to main | review + merge after #8 (it's based on #8, will rebase clean) |
 | 0c | **Install Phase-1 commands + (optional) Stop-hook / loop cadence** | runtime self-modification | `cp ~/seif/integrations/claude/commands/seif-*.md ~/.claude/commands/`; schedule `/loop` if wanted |
-| 0d | **L1 Redis** `apt install redis` | sudo | optional — file backend stands in until then (no code change) |
+| 0d | ~~**L1 Redis** `apt install redis` (sudo)~~ | **DONE — no sudo** | Live: dedicated `seif-redis` Docker container (localhost-only, persistent), client in logos-venv, auto-detected via `~/.config/seif/redis.url`. Verified `backend=redis`. |
 | 1 | **Next `/seif` task** | you pick the work | StratosAgent #1 (routing-honesty tests) or #3 (release provenance), or a real bug anywhere — I run the full loop |
 | 2 | **Composio (self-hosted) + Nango** for Stratos integrations | secrets/keys | provide keys when we reach P3 (Stratos-as-runtime); governance layer already built |
 | 3 | **Hard branch protection** on EfficientLabs-ai/seif | org/plan | enable ruleset (already applied on content-engine) |

@@ -56,15 +56,31 @@ def _atomic_write(path, text):
 
 
 # ----------------------------------------------------------------------------- L1
+# Machine-local Redis URL config (written when L1 Redis is provisioned). Lets every session/cron use Redis
+# without an env var, and adds NO latency when absent (we only probe Redis if a URL source is present).
+REDIS_URL_CONFIG = os.path.expanduser("~/.config/seif/redis.url")
+
+
+def _configured_redis_url():
+    try:
+        with open(REDIS_URL_CONFIG) as f:
+            return f.read().strip() or None
+    except Exception:  # noqa: BLE001 — missing/unreadable/non-utf8 config → no URL → file backend, never crash
+        return None
+
+
 class WorkingMemory:
-    """Hot working-set KV with optional TTL. Redis if reachable, else an atomic JSON file."""
+    """Hot working-set KV with optional TTL. Redis if reachable, else an atomic JSON file.
+
+    Redis URL source order: explicit `redis_url` arg → $SEIF_REDIS_URL → ~/.config/seif/redis.url (written
+    when L1 Redis is provisioned). If none, stays on the file backend with zero probe latency."""
 
     def __init__(self, path=None, namespace="seif", redis_url=None):
         self.namespace = namespace
         self.path = path or os.path.join(STORE, "working.json")
         self._r = None
         self.backend = "file"
-        url = redis_url or os.environ.get("SEIF_REDIS_URL")
+        url = redis_url or os.environ.get("SEIF_REDIS_URL") or _configured_redis_url()
         if url:
             try:
                 import redis  # noqa: F401  (optional)
