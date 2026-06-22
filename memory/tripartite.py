@@ -402,14 +402,19 @@ class Memory:
             "l1_backend": self.working.backend,
         }
         if repo is not None:
-            # L4 checkpoint engine lives in logos/ (already on sys.path for trajectory_summary). Any
-            # failure here degrades to None/0 — checkpoint state is additive, never a continuity blocker.
+            # L4 checkpoint engine lives in logos/ (already on sys.path for trajectory_summary). Checkpoint
+            # state is additive — never a continuity blocker — but we narrow the catch to EXPECTED failure
+            # classes (module absent / bad record shape / unreadable registry) and surface anything
+            # UNEXPECTED to stderr, so a real engine regression isn't silently masked as "no checkpoints".
             last_healthy, count = None, 0
             try:
                 import checkpoint as CP  # noqa: E402
                 last_healthy = CP.last_healthy(repo) or None
                 count = len(CP.lineage(repo))
-            except Exception:  # noqa: BLE001 — missing/broken checkpoint module must not break continuity
+            except (ImportError, AttributeError, OSError, ValueError, TypeError, KeyError):
+                last_healthy, count = None, 0   # genuinely absent/unreadable → degrade quietly
+            except Exception as e:  # noqa: BLE001 — unexpected: still degrade, but don't hide it
+                sys.stderr.write(f"[continuity] unexpected checkpoint error (degrading): {e!r}\n")
                 last_healthy, count = None, 0
             snap["last_healthy_checkpoint"] = last_healthy
             snap["checkpoint_count"] = count
