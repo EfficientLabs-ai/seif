@@ -16,6 +16,8 @@ PY = "/home/neo/logos-venv/bin/python"
 ARM = os.path.join(ROOT, "swe_arm_b_v2.py")
 PREDS = os.path.join(ROOT, "preds")
 EVAL_SET = os.path.join(ROOT, "eval_set_20.json")
+if len(sys.argv) > 1 and sys.argv[1].endswith(".json"):
+    EVAL_SET = sys.argv[1]
 PER_TASK_TIMEOUT = 5400  # up to 4 claude turns (900s) + repro runs + Codex gate calls
 
 

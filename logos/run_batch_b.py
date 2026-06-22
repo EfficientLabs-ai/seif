@@ -16,6 +16,8 @@ PY = "/home/neo/logos-venv/bin/python"
 ARM_B = os.path.join(ROOT, "swe_arm_b.py")
 PREDS = os.path.join(ROOT, "preds")
 EVAL_SET = os.path.join(ROOT, "eval_set_20.json")
+if len(sys.argv) > 1 and sys.argv[1].endswith(".json"):
+    EVAL_SET = sys.argv[1]
 PER_TASK_TIMEOUT = 3600  # up to 3 claude turns (900s each) + testbed runs + image pull
 
 
