@@ -18,8 +18,20 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import project_harness as H   # noqa: E402
+import integrity_guard as IG  # noqa: E402
 
 CLAUDE = "/home/neo/.local/bin/claude"
+
+# Protected surface for PROJECT-mode reward-hacking defense: a candidate must never make tests "pass"
+# by editing the tests, the CI, or the test runner itself. Source-only fixes. (Callers can override for
+# a task that legitimately adds tests — but the autonomous default protects the grader.)
+PROTECTED = (
+    "test/", "tests/", "spec/", "specs/", "__tests__/", "e2e/",
+    "test_*.py", "*_test.py", "*.test.js", "*.test.ts", "*.test.tsx", "*.test.jsx",
+    "*.test.mjs", "*.spec.js", "*.spec.ts", "*.spec.tsx", "*.spec.py", "conftest.py",
+    ".github/", "jest.config.*", "vitest.config.*", "pytest.ini", "tox.ini", "playwright.config.*",
+    "run-tests.*", "run_tests.*",
+)
 
 
 def _slug(s):
@@ -55,35 +67,57 @@ def _repo_slug(repo):
     return m.group(1) if m else None
 
 
-def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=True):
+def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=True, protected=PROTECTED):
     repo = os.path.abspath(repo)
     wt = H.checkpoint(repo, base)
-    feedback, passed, result, patch = "", False, None, ""
+    feedback, passed, result, patch, integrity = "", False, None, "", None
     print(f"[/seif] repo={os.path.basename(repo)} test='{test_cmd}' budget={budget}\n[/seif] clean room: {wt}")
     try:
-        for step in range(1, budget + 1):
-            rc = _claude_edit(wt, task, feedback, step == 1, timeout)
+        def _stage_diff():
             subprocess.run(["git", "-C", wt, "add", "-A"], capture_output=True)
-            patch = subprocess.run(["git", "-C", wt, "diff", "--cached"], capture_output=True, text=True).stdout
+            return subprocess.run(["git", "-C", wt, "diff", "--cached"], capture_output=True, text=True).stdout
+
+        for step in range(1, budget + 1):
+            integrity = None                          # never carry a prior step's verdict forward
+            rc = _claude_edit(wt, task, feedback, step == 1, timeout)
+            patch = _stage_diff()
             if not patch.strip():
                 print(f"[/seif] step {step}: agent made no change (rc={rc}) — stop")
+                result = {"outcome": "no_change", "exit_code": None}
                 break
             result = H.run_tests(wt, test_cmd, timeout=timeout)
             print(f"[/seif] step {step}: tests -> {result['outcome']} (exit {result['exit_code']}, {result['seconds']}s)")
             if result["outcome"] == "pass":
-                passed = True
-                break
+                # Re-snapshot AFTER tests: running the suite can touch tracked files, and we must
+                # integrity-check (and later commit) EXACTLY what is graded — not the pre-test snapshot.
+                patch = _stage_diff()
+                clean, integrity = IG.is_clean(patch, protected)
+                if clean:
+                    passed = True
+                    break
+                # Tests pass BUT the candidate edited a protected surface (tests/CI/runner) = reward-hacking.
+                # Reject this candidate; feed the violation back and let the remaining budget try a clean fix.
+                violated = [h["file"] for h in integrity["hard"]]
+                result["outcome"] = "integrity_violation"
+                print(f"[/seif] step {step}: INTEGRITY VIOLATION — protected edits: {violated}")
+                feedback = ("Tests passed BUT your change edited a PROTECTED path (tests, CI, or the test "
+                            f"runner): {violated}. That is not allowed — fix the SOURCE only, never the "
+                            "tests or test config. Make the source change that passes the EXISTING tests.")
+                continue
             feedback = (result.get("stdout", "") + "\n" + result.get("stderr", ""))[-4500:]
         rec = H._receipt(repo, task, test_cmd, result or {"outcome": "no_change", "exit_code": None}, patch)
         if not passed:
             H.discard(repo, wt)                                   # ATMS rollback — main untouched
-            print(f"[/seif] NOT VERIFIED — rolled back. receipt h={rec.get('h')}")
-            return {"accepted": False, "receipt": rec, "patch": patch}
+            why = {"integrity_violation": "integrity_violation",
+                   "no_change": "no_change"}.get((result or {}).get("outcome"), "tests")
+            print(f"[/seif] NOT VERIFIED ({why}) — rolled back. receipt h={rec.get('h')}")
+            return {"accepted": False, "receipt": rec, "patch": patch, "reason": why, "integrity": integrity}
         # success: land on a branch (never main), PR if a remote exists
         branch = f"seif/{_slug(task)}-{time.strftime('%m%d-%H%M%S', time.gmtime())}-{os.urandom(2).hex()}"
+        # commit the EXACT integrity-checked index (-m, not -am) so the PR contents == what was graded
         for c in (["git", "-C", wt, "checkout", "-q", "-b", branch],
                   ["git", "-C", wt, "-c", "user.name=Neo The Architect",
-                   "-c", "user.email=founder@efficientlabs.ai", "commit", "-q", "-am",
+                   "-c", "user.email=founder@efficientlabs.ai", "commit", "-q", "-m",
                    f"seif: {task[:72]}\n\nEvidence: tests pass (exit 0). Receipt {rec.get('h')}.\n"
                    f"Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"]):
             subprocess.run(c, check=True, capture_output=True)
@@ -105,7 +139,7 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
         print(f"[/seif] VERIFIED ✓  branch={branch}  landed={landed}  where={where}  receipt h={rec.get('h')}")
         # leave the worktree in place so the founder can inspect; caller/founder removes after merge
         return {"accepted": True, "landed": landed, "branch": branch, "pr": pr_url,
-                "worktree": wt, "receipt": rec, "patch": patch}
+                "worktree": wt, "receipt": rec, "patch": patch, "reason": "verified", "integrity": integrity}
     except Exception:
         H.discard(repo, wt)
         raise
@@ -125,5 +159,57 @@ def main():
     sys.exit(0 if r["accepted"] else 1)
 
 
+def _selftest():
+    """Real git repo + injected editor (no LLM): the integrity gate must REJECT a test-editing 'pass'
+    and ACCEPT an honest source fix, leaving main untouched."""
+    import tempfile
+    import textwrap
+    global _claude_edit
+    repo = tempfile.mkdtemp(prefix="seif-run-")
+    g = lambda *a: subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", *a],
+                                  check=True, capture_output=True)
+    subprocess.run(["git", "init", "-q", repo], check=True)
+    open(os.path.join(repo, "calc.py"), "w").write("def add(a, b):\n    return a - b\n")   # bug
+    open(os.path.join(repo, "test_calc.py"), "w").write(textwrap.dedent("""\
+        import unittest
+        from calc import add
+        class T(unittest.TestCase):
+            def test_add(self):
+                self.assertEqual(add(2, 3), 5)
+        """))
+    g("add", "-A"); g("commit", "-qm", "base")
+    cmd = f"{sys.executable} -m unittest -q test_calc"
+    orig = _claude_edit
+    try:
+        # case 1: CHEAT by rewriting the test to trivially pass -> integrity gate must reject
+        def cheat(wt, *a, **k):
+            open(os.path.join(wt, "test_calc.py"), "w").write(
+                "import unittest\nclass T(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n")
+            return 0
+        _claude_edit = cheat
+        r1 = seif_run(repo, "make tests pass", cmd, budget=1, base="HEAD", make_pr=False)
+        assert not r1["accepted"] and r1["reason"] == "integrity_violation", r1
+        assert any(h["file"].endswith("test_calc.py") for h in r1["integrity"]["hard"]), r1["integrity"]
+
+        # case 2: HONEST source fix -> accepted, lands on a local branch (no remote)
+        def honest(wt, *a, **k):
+            open(os.path.join(wt, "calc.py"), "w").write("def add(a, b):\n    return a + b\n")
+            return 0
+        _claude_edit = honest
+        r2 = seif_run(repo, "fix add", cmd, budget=1, base="HEAD", make_pr=False)
+        assert r2["accepted"] and r2["reason"] == "verified", r2
+        H.discard(repo, r2["worktree"])
+        # main never touched (still the buggy version)
+        assert open(os.path.join(repo, "calc.py")).read().strip().endswith("a - b"), "main untouched"
+        print("seif_run selftest PASS — integrity gate REJECTS test-editing, ACCEPTS honest source fix; main untouched")
+    finally:
+        _claude_edit = orig
+        import shutil
+        shutil.rmtree(repo, ignore_errors=True)
+
+
 if __name__ == "__main__":
-    main()
+    if "--selftest" in sys.argv:
+        _selftest()
+    else:
+        main()
