@@ -14,3 +14,4 @@ arm_b_*.json
 *.armb_*.json
 logos/*.json
 !logos/eval_set_20.json
+memory/store/
