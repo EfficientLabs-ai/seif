@@ -53,7 +53,17 @@ def checkpoint(repo, base="HEAD", link_deps=True):
                 try:
                     os.symlink(src, dst)
                 except OSError:
-                    pass
+                    continue
+        # git-ignore the symlinked dep dirs in THIS worktree so `git add -A` never stages them
+        # (a bare symlink named 'node_modules' isn't matched by a 'node_modules/' .gitignore rule).
+        try:
+            excl = subprocess.run(["git", "-C", wt, "rev-parse", "--git-path", "info/exclude"],
+                                  capture_output=True, text=True).stdout.strip()
+            if excl:
+                with open(os.path.join(wt, excl) if not os.path.isabs(excl) else excl, "a") as f:
+                    f.write("\n# seif: ignore symlinked dependency dirs\n" + "\n".join("/" + d for d in DEP_DIRS) + "\n")
+        except Exception:  # noqa: BLE001
+            pass
     return wt
 
 

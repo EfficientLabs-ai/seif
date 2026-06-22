@@ -48,6 +48,13 @@ def _has_remote(repo):
     return bool(r.stdout.strip())
 
 
+def _repo_slug(repo):
+    """OWNER/REPO from the origin remote URL (gh -R wants this, not a local path)."""
+    url = subprocess.run(["git", "-C", repo, "remote", "get-url", "origin"], capture_output=True, text=True).stdout.strip()
+    m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", url)
+    return m.group(1) if m else None
+
+
 def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=True):
     repo = os.path.abspath(repo)
     wt = H.checkpoint(repo, base)
@@ -87,7 +94,8 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
             if push.returncode != 0:
                 pr_url = f"(push failed rc={push.returncode}: {push.stderr[-160:]})"
             else:
-                pr = subprocess.run(["gh", "pr", "create", "-R", repo, "--head", branch, "--fill"],
+                slug = _repo_slug(repo)
+                pr = subprocess.run(["gh", "pr", "create", "-R", slug or repo, "--head", branch, "--fill"],
                                     cwd=wt, capture_output=True, text=True)
                 if pr.returncode == 0:
                     pr_url, landed = pr.stdout.strip(), True

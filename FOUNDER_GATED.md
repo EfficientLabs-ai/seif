@@ -11,12 +11,18 @@
   found the multi-model verifier *panel* overrated (correlated opinions); the independent-verifier role is
   **Codex-only**, and the real lever is executable evidence (the Evidence Engine). No Gemini dependency anywhere.
 
+## ✅ Cleared (cont.)
+- **SEIF PR #6 & #7 MERGED** (v0.2 Evidence Engine: WP-A..H + Governed Integration Fabric governance + docs).
+- **FIRST REAL `/seif` TASK DONE END-TO-END:** StratosAgent **#2 (AGENTS.md governance) MERGED** via the
+  full governed loop — `/seif` generated + verified (14/14) → I reviewed → **Codex caught an overclaim →
+  fixed → Codex APPROVED** → merged → **issue #2 closed**. The stack operating on real EFL code, with a receipt.
+
 ## ⏳ Awaiting your call
 | # | Item | Why gated | Action for you |
 |---|---|---|---|
-| 0 | **SEIF PR #7** — v0.2 completion: candidate-blind Test Architect (WP-B) + MCP profile (WP-H) + claims/pre-registration/non-goals docs | merge to main | review + merge: `gh pr merge 7 --squash` (EfficientLabs-ai/seif) · (PR #6 already merged) |
-| 1 | **First real `/seif` task** | you pick the work | name a genuine feature/bug (Stratos is green — no failing suite to auto-target); I run the full loop → branch/PR + receipt |
-| 2 | **Composio (self-hosted) + Nango** for Stratos integrations | secrets/keys | provide keys when we reach P3 (Stratos-as-runtime) |
+| 0 | **SEIF PR #8** — /seif driver bug-fixes (dep-symlink leak + gh -R slug) found dogfooding #2 | merge to main | review + merge: `gh pr merge 8 --squash` (EfficientLabs-ai/seif) |
+| 1 | **Next `/seif` task** | you pick the work | StratosAgent #1 (routing-honesty tests) or #3 (release provenance), or a real bug anywhere — I run the full loop |
+| 2 | **Composio (self-hosted) + Nango** for Stratos integrations | secrets/keys | provide keys when we reach P3 (Stratos-as-runtime); governance layer already built |
 | 3 | **Hard branch protection** on EfficientLabs-ai/seif | org/plan | enable ruleset (already applied on content-engine) |
 | 4 | **Publish/OSS decision** for SEIF (Apache) | public surface | hold until founder gate |
 | 5 | **Social posting / content distribution** | public, brand | the poster stays gated; approve per-campaign |
