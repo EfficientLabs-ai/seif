@@ -68,8 +68,17 @@ def _repo_slug(repo):
     return m.group(1) if m else None
 
 
+def _resolve_base(repo, base):
+    """Resolve the clean-room base ref. 'last-healthy' → the last HEALTHY L4 checkpoint's commit (or
+    'HEAD' if none yet); any other value (incl. the default 'HEAD') is returned unchanged."""
+    if base == "last-healthy":
+        return (CP.last_healthy(repo) or {}).get("commit") or "HEAD"
+    return base
+
+
 def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=True, protected=PROTECTED):
     repo = os.path.abspath(repo)
+    base = _resolve_base(repo, base)
     wt = H.checkpoint(repo, base)
     feedback, passed, result, patch, integrity = "", False, None, "", None
     print(f"[/seif] repo={os.path.basename(repo)} test='{test_cmd}' budget={budget}\n[/seif] clean room: {wt}")
@@ -177,7 +186,8 @@ def main():
     ap.add_argument("--task", required=True)
     ap.add_argument("--test", required=True, dest="test_cmd")
     ap.add_argument("--budget", type=int, default=3)
-    ap.add_argument("--base", default="HEAD")
+    ap.add_argument("--base", default="HEAD",
+                    help="clean-room base ref (default HEAD); 'last-healthy' resolves to the last healthy L4 checkpoint")
     ap.add_argument("--timeout", type=int, default=600)
     ap.add_argument("--no-pr", action="store_true")
     a = ap.parse_args()
