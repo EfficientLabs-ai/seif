@@ -12,6 +12,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "memory"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "logos"))
+import checkpoint as CP  # noqa: E402
 import trajectory_summary as TS  # noqa: E402
 from tripartite import EpisodicMemory, Memory, SemanticMemory, WorkingMemory  # noqa: E402
 
@@ -193,6 +194,32 @@ class TestFacade(unittest.TestCase):
         self.assertFalse(snap["ecp_ledger_present"])     # missing ledger handled
         self.assertEqual(len(snap["recent_episodes"]), 1)
         self.assertEqual(len(snap["reusable_lessons"]), 1)
+
+    def test_continuity_snapshot_no_repo_omits_checkpoint_keys(self):
+        # No repo → behaviour + return keys unchanged: checkpoint keys absent, no crash.
+        snap = self.mem.continuity_snapshot()
+        self.assertNotIn("last_healthy_checkpoint", snap)
+        self.assertNotIn("checkpoint_count", snap)
+        self.assertEqual(snap["l1_backend"], "file")
+
+    def test_continuity_snapshot_checkpoint_aware(self):
+        # Point the checkpoint ledger at a temp path so the test never touches the real registry.
+        led = os.path.join(self.tmp, "checkpoints.jsonl")
+        fail = os.path.join(self.tmp, "failures.jsonl")
+        prev_led, prev_fail = CP.LEDGER, CP.FAILURES
+        CP.LEDGER, CP.FAILURES = led, fail
+        try:
+            repo = os.path.join(self.tmp, "cp_repo")
+            os.makedirs(repo)
+            cp = CP.create(repo, "v1 verified", commit="deadbeef",
+                           proof={"outcome": "pass", "receipt": "r1", "exit_code": 0},
+                           context={"task": "impl", "files_changed": ["a.py"]})
+            snap = self.mem.continuity_snapshot(repo=repo)
+            self.assertIsNotNone(snap["last_healthy_checkpoint"])
+            self.assertEqual(snap["last_healthy_checkpoint"]["id"], cp["id"])
+            self.assertEqual(snap["checkpoint_count"], 1)
+        finally:
+            CP.LEDGER, CP.FAILURES = prev_led, prev_fail
 
 
 if __name__ == "__main__":
