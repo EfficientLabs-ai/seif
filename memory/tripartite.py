@@ -378,10 +378,14 @@ class Memory:
             self._graphs[key] = SemanticMemory(key)
         return self._graphs[key]
 
-    def continuity_snapshot(self, task_id=None, n_episodes=5):
+    def continuity_snapshot(self, task_id=None, n_episodes=5, repo=None):
         """Reconstruct 'where am I' for a resumed/looped session WITHOUT the transcript: the ECP session
         ledger (deterministic state) + the most recent episodes + open reuse lessons. The 'never forgets'
-        primitive — the loop reads this on boot instead of re-deriving from chat."""
+        primitive — the loop reads this on boot instead of re-deriving from chat.
+
+        When `repo` is given, also surface the L4 checkpoint state for that repo (last healthy rollback
+        target + lineage length). A missing/broken checkpoint module degrades to None/0 and NEVER breaks
+        continuity. When `repo` is None, behaviour and return keys are unchanged."""
         ecp = None
         try:
             with open(self.ecp_ledger) as f:
@@ -389,7 +393,7 @@ class Memory:
         except (OSError, ValueError):
             ecp = None
         eps = self.episodic.query(task_id=task_id, limit=n_episodes)
-        return {
+        snap = {
             "working_keys": self.working.keys(),
             "recent_episodes": eps,
             "reusable_lessons": self.episodic.reusable_lessons(limit=n_episodes),
@@ -397,6 +401,19 @@ class Memory:
             "ecp_ledger_keys": list(ecp.keys())[:20] if isinstance(ecp, dict) else None,
             "l1_backend": self.working.backend,
         }
+        if repo is not None:
+            # L4 checkpoint engine lives in logos/ (already on sys.path for trajectory_summary). Any
+            # failure here degrades to None/0 — checkpoint state is additive, never a continuity blocker.
+            last_healthy, count = None, 0
+            try:
+                import checkpoint as CP  # noqa: E402
+                last_healthy = CP.last_healthy(repo) or None
+                count = len(CP.lineage(repo))
+            except Exception:  # noqa: BLE001 — missing/broken checkpoint module must not break continuity
+                last_healthy, count = None, 0
+            snap["last_healthy_checkpoint"] = last_healthy
+            snap["checkpoint_count"] = count
+        return snap
 
 
 # ----------------------------------------------------------------------------- selftest
