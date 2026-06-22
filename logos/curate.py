@@ -38,6 +38,12 @@ def main():
     print("by bucket:", {b: sum(1 for i in pick if i in by[b]) for b in by})
     print(pick)
 
+    # eval_set_full.json — ALL light-repo instances (superset of the 20), for the scale-up wave.
+    full = [i for b in ("single", "multi", "large") for i in by.get(b, [])]
+    FULL = OUT.replace("eval_set_20.json", "eval_set_full.json")
+    json.dump({"instances": full, "counts": {b: len(by[b]) for b in by}}, open(FULL, "w"), indent=2)
+    print(f"FULL set: {len(full)} instances -> {FULL}  (superset of the 20)")
+
 
 if __name__ == "__main__":
     main()

@@ -27,6 +27,17 @@ ARMS = [
 ]
 
 
+def _has_patch(fp):
+    """A prediction is DONE only if it exists AND carries a non-empty patch. An empty-patch stub (agent
+    error / no edit / rate-limit salvage) must be REDONE on resume — file-existence alone is the
+    false-complete bug that contaminated the first 3-seed run (whole arms scored 0% on empty patches)."""
+    try:
+        d = json.loads(open(fp).read().strip().splitlines()[-1])
+        return len((d.get("model_patch") or "").strip()) > 0
+    except Exception:
+        return False
+
+
 def main():
     instances = json.load(open(EVAL_SET))["instances"]
     print(f"[seeds] {len(instances)} instances × {len(ARMS)} arms × seeds {SEEDS}", flush=True)
@@ -35,8 +46,9 @@ def main():
         os.makedirs(preds, exist_ok=True)
         env = {**os.environ, "SEIF_PREDS": preds, "PYTHONUNBUFFERED": "1"}
         for prefix, script, extra in ARMS:
-            todo = [i for i in instances if not os.path.exists(os.path.join(preds, f"{prefix}{i}.jsonl"))]
-            print(f"[seeds] seed{seed} {prefix.rstrip('_')}: {len(instances)-len(todo)} done, {len(todo)} to run", flush=True)
+            todo = [i for i in instances if not _has_patch(os.path.join(preds, f"{prefix}{i}.jsonl"))]
+            print(f"[seeds] seed{seed} {prefix.rstrip('_')}: {len(instances)-len(todo)} done (non-empty), "
+                  f"{len(todo)} to run", flush=True)
             for n, iid in enumerate(todo, 1):
                 t0 = time.monotonic()
                 print(f"[seeds] seed{seed} {prefix.rstrip('_')} ({n}/{len(todo)}) {iid}", flush=True)
@@ -46,8 +58,15 @@ def main():
                     print(f"[seeds] WALL-TIMEOUT seed{seed} {prefix} {iid}", flush=True)
                 except Exception as e:
                     print(f"[seeds] ERROR seed{seed} {prefix} {iid}: {e!r}", flush=True)
-                print(f"[seeds]   ({time.monotonic()-t0:.0f}s) preds={'yes' if os.path.exists(os.path.join(preds, f'{prefix}{iid}.jsonl')) else 'NO'}", flush=True)
-    print("[seeds] COMPLETE", flush=True)
+                ok = _has_patch(os.path.join(preds, f"{prefix}{iid}.jsonl"))
+                print(f"[seeds]   ({time.monotonic()-t0:.0f}s) patch={'yes' if ok else 'EMPTY'}", flush=True)
+    # honest completeness: report non-empty patch counts per seed/arm (not file existence)
+    for seed in SEEDS:
+        preds = os.path.join(ROOT, "preds", f"seed{seed}")
+        counts = {p.rstrip("_"): sum(_has_patch(os.path.join(preds, f"{p}{i}.jsonl")) for i in instances)
+                  for p, _, _ in ARMS}
+        print(f"[seeds] seed{seed} non-empty: {counts}", flush=True)
+    print("[seeds] COMPLETE (counts above = non-empty patches; full = all == n_instances)", flush=True)
 
 
 if __name__ == "__main__":
