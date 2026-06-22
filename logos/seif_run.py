@@ -70,10 +70,16 @@ def _repo_slug(repo):
 
 def _resolve_base(repo, base):
     """Resolve the clean-room base ref. 'last-healthy' → the last HEALTHY L4 checkpoint's commit (or
-    'HEAD' if none yet); any other value (incl. the default 'HEAD') is returned unchanged."""
-    if base == "last-healthy":
-        return (CP.last_healthy(repo) or {}).get("commit") or "HEAD"
-    return base
+    'HEAD' if none yet); any other value (incl. the default 'HEAD') is returned unchanged. Defensive: a
+    missing/None/malformed checkpoint record falls back to 'HEAD' and never crashes the run."""
+    if base != "last-healthy":
+        return base
+    try:
+        last = CP.last_healthy(repo)
+        commit = last.get("commit") if isinstance(last, dict) else None
+    except Exception:  # noqa: BLE001 — base resolution must never break the gate; degrade to HEAD
+        commit = None
+    return commit or "HEAD"
 
 
 def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=True, protected=PROTECTED):

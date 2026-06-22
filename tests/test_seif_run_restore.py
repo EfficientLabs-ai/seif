@@ -51,6 +51,36 @@ class ResolveBaseTest(unittest.TestCase):
         self.assertEqual(SR._resolve_base(self.repo, "main"), "main")
         self.assertEqual(SR._resolve_base(self.repo, self.c1), self.c1)
 
+    def test_malformed_last_healthy_degrades_to_head(self):
+        # a corrupted ledger that yields a non-dict / raising last_healthy must fall back to HEAD, not crash
+        orig = CP.last_healthy
+        try:
+            CP.last_healthy = lambda repo: ["not", "a", "dict"]      # malformed truthy
+            self.assertEqual(SR._resolve_base(self.repo, "last-healthy"), "HEAD")
+            CP.last_healthy = lambda repo: (_ for _ in ()).throw(RuntimeError("corrupt ledger"))
+            self.assertEqual(SR._resolve_base(self.repo, "last-healthy"), "HEAD")
+            CP.last_healthy = lambda repo: None
+            self.assertEqual(SR._resolve_base(self.repo, "last-healthy"), "HEAD")
+        finally:
+            CP.last_healthy = orig
+
+    def test_seif_run_uses_resolved_base(self):
+        # integration: seif_run must build the clean-room from the RESOLVED base (the checkpoint commit)
+        CP.create(self.repo, "c1 healthy", commit=self.c1, proof={"outcome": "pass", "receipt": "r1"})
+        self._commit("def add(a, b):\n    return a + b\ndef sub(a, b):\n    return a - b\n", "c2")
+        seen = {}
+        orig_ckpt, orig_edit = SR.H.checkpoint, SR._claude_edit
+        try:
+            def spy_checkpoint(repo, base="HEAD", **kw):
+                seen["base"] = base
+                return orig_ckpt(repo, base, **kw)
+            SR.H.checkpoint = spy_checkpoint
+            SR._claude_edit = lambda *a, **k: 0           # no-op editor → no change → early stop
+            SR.seif_run(self.repo, "noop", "true", budget=1, base="last-healthy", make_pr=False)
+            self.assertEqual(seen.get("base"), self.c1, "clean-room must use the resolved checkpoint commit")
+        finally:
+            SR.H.checkpoint, SR._claude_edit = orig_ckpt, orig_edit
+
 
 if __name__ == "__main__":
     unittest.main()
