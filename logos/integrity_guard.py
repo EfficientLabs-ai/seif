@@ -64,12 +64,22 @@ def _added_lines(diff):
     return "\n".join(l[1:] for l in diff.splitlines() if l.startswith("+") and not l.startswith("+++"))
 
 
+# Gate-disabling sentinels that must NEVER appear in a candidate patch, regardless of the per-task protected
+# set — a candidate that adds one is trying to switch the gate OFF (reward-hacking). Matched via _match so
+# rename/quoted/case/subdir variants are covered. (Dogfood: a clean-room sub-agent leaked .seif-gate-off
+# into a StratosAgent #1 patch and the guard didn't catch it — this is the fix.)
+_BYPASS_SENTINELS = (".seif-gate-off",)
+
+
 def scan_patch(diff, protected_paths, graded_ids=()):
-    """Return {hard:[...], flags:[...], changed_files:[...]}. hard = protected-surface edits (reject);
-    flags = graded-id references in added code (review)."""
+    """Return {hard:[...], flags:[...], changed_files:[...]}. hard = protected-surface edits OR gate-bypass
+    sentinels (reject); flags = graded-id references in added code (review)."""
     files = changed_files(diff)
     hard = []
     for f in sorted(files):
+        if any(_match(f, s) for s in _BYPASS_SENTINELS):     # always rejected, independent of protected_paths
+            hard.append({"vector": "gate_bypass_sentinel", "file": f})
+            continue
         hits = [p for p in protected_paths if _match(f, p)]
         if hits:
             hard.append({"vector": "protected_path_edit", "file": f, "matched": hits[:3]})
