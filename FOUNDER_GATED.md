@@ -2,7 +2,18 @@
 
 > Anything requiring secrets, a merge to main, production, publishing, or runtime self-modification is
 > parked here per the deny-by-default doctrine. I (Claude) execute everything else autonomously and log
-> it. Updated 2026-06-21 (founder at gym + Fortnite content; available remote).
+> it. Updated 2026-06-22 (founder at gym + Fortnite content; available remote).
+
+## ⚠️ CORRECTION — PR #9 was a PHANTOM MERGE (Phase 1 did NOT reach main)
+A verification pass (independent agents, gh-API + git-ancestry) caught this: **PR #9 shows "MERGED" on
+GitHub but its content is NOT on main.** Cause: I targeted PR #9's base at `fix/seif-driver-dogfood`
+(PR #8's branch) instead of `main`; PR #8 merged that branch's *earlier* state into main 17s before #9
+merged into the (now-stale) branch. So the Phase-1 commits landed only on the feature branch. Verified:
+`git merge-base --is-ancestor origin/feat/autonomous-env-phase1 origin/main` → NOT an ancestor; main tree
+has 0 Phase-1 files. **Fix:** this branch (`feat/phase1-to-main`) cherry-picks the 3 Phase-1 commits clean
+onto `origin/main` (selftests + the new unittests all green) and opens a CORRECTED PR → main. A merged PR
+can't be retargeted, so #9 stays as the misfired record. **Lesson:** "merged" badge ≠ "on main" — always
+verify by ancestry. My fault (base-targeting); the discipline caught it before it became a false claim.
 
 ## ✅ Cleared (2026-06-22)
 - **SEIF PR #5 MERGED** (eval harness + Agent Harness + /seif + master architecture + v0.2 WP-A/C/E).
