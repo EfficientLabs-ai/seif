@@ -105,13 +105,45 @@ under-count) — each caught by a real shipped test — fixed by each model in a
   keep an escalation safety net** — the frontier is further out than this class of work.
 - **Honest limits:** n=1, 3 bugs, one real repo (seif), small (if subtle) bugs.
 
+## Round 3 (router/frontier) — test the ROUTER, not just cheaper models (MEASURED)
+
+The decisive test of whether *dynamic routing* beats *just using Haiku*. 5 genuinely hard tasks (dedup
+last-wins, role hierarchy, migration diamond-deps, cross-file API contract with a falsy-value trap,
+pagination boundaries) × 3 seeds, each with a **visible gate** the model fixes against **plus a withheld
+oracle** (hidden edge-case test) — so a narrow fix that passes the gate but misses edges is caught as a
+**false accept**. Strategies derived from the matrix; truth = the withheld oracle.
+
+| Strategy | resolve | $/resolved | false accepts |
+| --- | --- | --- | --- |
+| always:haiku | 15/15 | **$0.101** | 0 |
+| always:sonnet | 15/15 | $0.248 | 0 |
+| always:opus | 15/15 | $0.717 | 0 |
+| static-route (hard→opus) | 15/15 | $0.610 | 0 |
+| **escalation** (haiku→sonnet→opus) | 15/15 | **$0.101** | 0 · mix=**all-haiku**, attempts=**1.0** |
+
+**Findings (and what they do NOT prove):**
+- **Haiku resolved everything (15/15) with ZERO false accepts** — its fixes were *correct*, passing the
+  withheld oracle, not just the visible gate.
+- **The escalation router was never exercised** (Haiku never failed the gate) — so its *rescue value*
+  remains **UNPROVEN**. Escalation = always-Haiku cost here.
+- **Naive static routing BACKFIRES**: routing "hard" tasks to opus cost **6× more** ($0.610 vs $0.101) for
+  **no** quality gain.
+- **Honest policy for bug-fix-class work:** *default to the cheapest model + verify; do NOT route/escalate
+  until a failure is measured.* The capability frontier (where cheap models fail) is **beyond** even these
+  hard, oracle-checked tasks. Finding it needs novel/architectural/long-horizon work.
+- **Honest limits:** n=3 seeds, 5 tasks, one fixture; "hard" = algorithmic + contract bugs, not novel
+  systems work.
+
 ## What the real levers are
 
 1. **Leaner per-call context** (don't re-send the whole environment every call) — MEASURED: fresh input
    −92% / ~$0.14/call env tax. ~93% env-share **confirmed on real code (E4)**, not just the toy fixture.
-2. **Model routing** (route work to the cheapest capable model) — MEASURED (E3 + Round 2a + E4): −70%/−86%
-   at equal resolve-rate, robust through textbook-hard algorithmic bugs AND real subtle bugs; an escalation
-   router gives −87% with an opus safety net. The capability frontier is beyond bug-fix-class tasks.
+2. **Use the cheapest capable model** — MEASURED (E3 + Round 2a + E4 + Round 3): −70%/−86% cost-per-resolved
+   at equal resolve-rate, robust through textbook-hard AND oracle-checked hard bugs, with **zero false
+   accepts**. Honest correction from Round 3: *dynamic routing/escalation is NOT yet justified* for this
+   task class — Haiku never failed, so escalation never triggered, and naive static routing (hard→opus)
+   **backfired (6× cost, no gain)**. Policy: default cheap + verify; escalate only on a measured failure
+   (not yet observed — the frontier is beyond bug-fix-class work).
 3. **NOT graph delta-scoping** — REFUTED (E2).
 
 ## Caveats (will not hide)
