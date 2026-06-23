@@ -1,0 +1,119 @@
+{
+  "oneshot": {
+    "rows": [
+      {
+        "resolved": false,
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "cost_usd": 0.0,
+          "model": null
+        },
+        "attempts": 1,
+        "task": "fix_add"
+      },
+      {
+        "resolved": true,
+        "usage": {
+          "input_tokens": 31820,
+          "output_tokens": 1534,
+          "cache_creation_input_tokens": 41303,
+          "cache_read_input_tokens": 502954,
+          "cost_usd": 0.7070707500000001,
+          "model": "claude-opus-4-8[1m]"
+        },
+        "attempts": 1,
+        "task": "fix_shout"
+      },
+      {
+        "resolved": false,
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "cost_usd": 0.0,
+          "model": null
+        },
+        "attempts": 1,
+        "task": "fix_clamp"
+      }
+    ],
+    "totals": {
+      "input_tokens": 31820,
+      "output_tokens": 1534,
+      "cache_creation_input_tokens": 41303,
+      "cache_read_input_tokens": 502954,
+      "cost_usd": 0.707071,
+      "calls": 3,
+      "model": "claude-opus-4-8[1m]",
+      "tasks": 3,
+      "resolved": 1,
+      "total_tokens": 577611,
+      "cost_per_resolved": 0.707071,
+      "tokens_per_resolved": 577611.0
+    }
+  },
+  "loop": {
+    "rows": [
+      {
+        "resolved": true,
+        "usage": {
+          "input_tokens": 32060,
+          "output_tokens": 1442,
+          "cache_creation_input_tokens": 41439,
+          "cache_read_input_tokens": 392754,
+          "cost_usd": 0.651721,
+          "calls": 1,
+          "model": "claude-opus-4-8[1m]"
+        },
+        "attempts": 1,
+        "task": "fix_add"
+      },
+      {
+        "resolved": true,
+        "usage": {
+          "input_tokens": 31683,
+          "output_tokens": 909,
+          "cache_creation_input_tokens": 40563,
+          "cache_read_input_tokens": 281263,
+          "cost_usd": 0.57529,
+          "calls": 1,
+          "model": "claude-opus-4-8[1m]"
+        },
+        "attempts": 1,
+        "task": "fix_shout"
+      },
+      {
+        "resolved": true,
+        "usage": {
+          "input_tokens": 31816,
+          "output_tokens": 1524,
+          "cache_creation_input_tokens": 41077,
+          "cache_read_input_tokens": 392518,
+          "cost_usd": 0.65017,
+          "calls": 1,
+          "model": "claude-opus-4-8[1m]"
+        },
+        "attempts": 1,
+        "task": "fix_clamp"
+      }
+    ],
+    "totals": {
+      "input_tokens": 95559,
+      "output_tokens": 3875,
+      "cache_creation_input_tokens": 123079,
+      "cache_read_input_tokens": 1066535,
+      "cost_usd": 1.877181,
+      "calls": 3,
+      "model": "claude-opus-4-8[1m]",
+      "tasks": 3,
+      "resolved": 3,
+      "total_tokens": 1289048,
+      "cost_per_resolved": 0.625727,
+      "tokens_per_resolved": 429682.7
+    }
+  }
+}
