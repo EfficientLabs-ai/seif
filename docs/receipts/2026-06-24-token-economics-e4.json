@@ -1,0 +1,158 @@
+{
+  "matrix": [
+    {
+      "bug": "e4_pipe",
+      "seed": 0,
+      "model": "claude-opus-4-8",
+      "resolved": true,
+      "cost_usd": 0.71219475,
+      "fresh_input": 31695,
+      "env_share": 0.9348
+    },
+    {
+      "bug": "e4_pipe",
+      "seed": 0,
+      "model": "claude-sonnet-4-6",
+      "resolved": true,
+      "cost_usd": 0.21973035,
+      "fresh_input": 5,
+      "env_share": 0.9884
+    },
+    {
+      "bug": "e4_pipe",
+      "seed": 0,
+      "model": "claude-haiku-4-5-20251001",
+      "resolved": true,
+      "cost_usd": 0.10012045,
+      "fresh_input": 58,
+      "env_share": 0.9929
+    },
+    {
+      "bug": "e4_chore",
+      "seed": 0,
+      "model": "claude-opus-4-8",
+      "resolved": true,
+      "cost_usd": 0.6760169999999999,
+      "fresh_input": 31693,
+      "env_share": 0.9268
+    },
+    {
+      "bug": "e4_chore",
+      "seed": 0,
+      "model": "claude-sonnet-4-6",
+      "resolved": true,
+      "cost_usd": 0.2008008,
+      "fresh_input": 5,
+      "env_share": 0.9965
+    },
+    {
+      "bug": "e4_chore",
+      "seed": 0,
+      "model": "claude-haiku-4-5-20251001",
+      "resolved": true,
+      "cost_usd": 0.09965725,
+      "fresh_input": 66,
+      "env_share": 0.9956
+    },
+    {
+      "bug": "e4_totaltok",
+      "seed": 0,
+      "model": "claude-opus-4-8",
+      "resolved": true,
+      "cost_usd": 0.7036454999999999,
+      "fresh_input": 31695,
+      "env_share": 0.9341
+    },
+    {
+      "bug": "e4_totaltok",
+      "seed": 0,
+      "model": "claude-sonnet-4-6",
+      "resolved": true,
+      "cost_usd": 0.20148285,
+      "fresh_input": 5,
+      "env_share": 0.9944
+    },
+    {
+      "bug": "e4_totaltok",
+      "seed": 0,
+      "model": "claude-haiku-4-5-20251001",
+      "resolved": true,
+      "cost_usd": 0.08420575,
+      "fresh_input": 42,
+      "env_share": 0.9921
+    }
+  ],
+  "escalation": [
+    {
+      "resolved": true,
+      "resolver": "claude-haiku-4-5-20251001",
+      "cost_usd": 0.100277,
+      "attempts": [
+        {
+          "model": "claude-haiku-4-5-20251001",
+          "resolved": true,
+          "cost": 0.10027705
+        }
+      ],
+      "bug": "e4_pipe"
+    },
+    {
+      "resolved": true,
+      "resolver": "claude-haiku-4-5-20251001",
+      "cost_usd": 0.080483,
+      "attempts": [
+        {
+          "model": "claude-haiku-4-5-20251001",
+          "resolved": true,
+          "cost": 0.0804834
+        }
+      ],
+      "bug": "e4_chore"
+    },
+    {
+      "resolved": true,
+      "resolver": "claude-haiku-4-5-20251001",
+      "cost_usd": 0.087574,
+      "attempts": [
+        {
+          "model": "claude-haiku-4-5-20251001",
+          "resolved": true,
+          "cost": 0.0875739
+        }
+      ],
+      "bug": "e4_totaltok"
+    }
+  ],
+  "frontier": {
+    "claude-opus-4-8": {
+      "runs": 3,
+      "resolved": 3,
+      "resolve_rate": 1.0,
+      "cost_per_resolved": 0.697286,
+      "mean_env_share": 0.9319
+    },
+    "claude-sonnet-4-6": {
+      "runs": 3,
+      "resolved": 3,
+      "resolve_rate": 1.0,
+      "cost_per_resolved": 0.207338,
+      "mean_env_share": 0.9931
+    },
+    "claude-haiku-4-5-20251001": {
+      "runs": 3,
+      "resolved": 3,
+      "resolve_rate": 1.0,
+      "cost_per_resolved": 0.094661,
+      "mean_env_share": 0.9935
+    }
+  },
+  "router": {
+    "tasks": 3,
+    "resolved": 3,
+    "cost_per_resolved": 0.089445,
+    "total_cost": 0.268334,
+    "resolver_mix": {
+      "claude-haiku-4-5-20251001": 3
+    }
+  }
+}

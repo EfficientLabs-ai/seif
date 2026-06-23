@@ -61,17 +61,57 @@ resolved **6/6 (100%)**, so cost-per-resolved equals cost-per-call here — an e
 
 **Model routing is a real, large cost lever — up to −86% at EQUAL resolve-rate.** (Pricing checks out:
 haiku's lower per-token rate dominates even though it sometimes uses *more* tokens than sonnet.)
-**Honest bound:** these are easy bugs within every model's capability, so resolve-rate is tied at 100% —
-the best case for routing down. The **difficulty frontier** where cheaper models start failing (and
-cost-per-resolved flips) is NOT yet measured; an escalation router (try cheap → escalate on fail) is the
-robust production pattern. TARGET: re-run on a hardness-graded set.
+
+## Round 2a — routing frontier + escalation router (MEASURED, n=1/task)
+
+Difficulty-graded set (2 easy + 3 textbook-hard algorithmic bugs: roman numerals, interval-merge,
+balanced-brackets — each with multi-assertion/edge-case tests), each × {opus, sonnet, haiku}; plus an
+escalation router (haiku → sonnet → opus, escalate on a failing test).
+
+| Model | resolve (all) | $/resolved | hard-only resolve · $/resolved |
+| --- | --- | --- | --- |
+| opus-4-8 | 5/5 | $0.667 | 3/3 · $0.691 |
+| sonnet-4-6 | 5/5 | $0.244 (−63%) | 3/3 · $0.251 |
+| haiku-4-5 | 5/5 | **$0.105 (−84%)** | 3/3 · $0.111 |
+
+- **The routing advantage holds across easy→textbook-hard.** Haiku resolved all three hard algorithmic
+  bugs 100% — so the −84% advantage is robust well past trivial fixes. **The true capability frontier is
+  *further out* than classic algorithms** (they're well-represented in every model's training); finding it
+  needs genuinely novel / real-codebase complexity (→ E4).
+- **Escalation router:** resolved 5/5, all at haiku → **$0.089/resolved (−87% vs opus)**; it never needed
+  to escalate. The logic is validated, but its *rescue value* (catching a cheap-model miss) was not
+  exercised because nothing failed here. That requires a task set haiku actually fails (→ E4).
+- **Honest limits:** n=1 seed; "hard" = textbook algorithms, not novel/real-repo difficulty.
+
+## E4 — real-codebase validation (MEASURED)
+
+Answers the "toy fixture ≠ real code" critique: 3 subtle real bugs injected into the **actual seif source**
+(`pr_format._cell` pipe-escaping, the `build_commit` `chore` fallback, a `usage_meter.total_tokens`
+under-count) — each caught by a real shipped test — fixed by each model in a clean-room of real `main`.
+
+| Model (real seif) | resolve | $/resolved | mean env-share |
+| --- | --- | --- | --- |
+| opus-4-8 | 3/3 | $0.697 | **93.2%** |
+| sonnet-4-6 | 3/3 | $0.207 (−70%) | 99.3% |
+| haiku-4-5 | 3/3 | **$0.095 (−86%)** | 99.4% |
+| escalation router | 3/3 | **$0.089** | — (never escalated) |
+
+- **Both levers hold on real code.** The ~93% environment-share composition reproduces *exactly* on a real
+  repo (opus 93.2%), and routing's −86% (haiku) / −70% (sonnet) holds on real navigation — consistent with
+  E3/Round 2a. (Cheaper models show even higher env-share ~99%: they emit less fresh work relative to the
+  cached environment.)
+- **Frontier still not reached:** haiku resolved all 3 real subtle bugs 100%, so the escalation router again
+  never escalated. The honest read: for bug-fix-class tasks, **route aggressively to the cheapest model and
+  keep an escalation safety net** — the frontier is further out than this class of work.
+- **Honest limits:** n=1, 3 bugs, one real repo (seif), small (if subtle) bugs.
 
 ## What the real levers are
 
 1. **Leaner per-call context** (don't re-send the whole environment every call) — MEASURED: fresh input
-   −92% / ~$0.14/call env tax. "File architecture" in the truest sense; partly just context discipline.
-2. **Model routing** (easy work → cheaper model) — MEASURED (E3): −65% (sonnet) to −86% (haiku) at equal
-   resolve-rate, bounded to tasks within the cheaper model's capability.
+   −92% / ~$0.14/call env tax. ~93% env-share **confirmed on real code (E4)**, not just the toy fixture.
+2. **Model routing** (route work to the cheapest capable model) — MEASURED (E3 + Round 2a + E4): −70%/−86%
+   at equal resolve-rate, robust through textbook-hard algorithmic bugs AND real subtle bugs; an escalation
+   router gives −87% with an opus safety net. The capability frontier is beyond bug-fix-class tasks.
 3. **NOT graph delta-scoping** — REFUTED (E2).
 
 ## Caveats (will not hide)
@@ -86,10 +126,11 @@ robust production pattern. TARGET: re-run on a hardness-graded set.
 
 - **Production retry-on-empty**: the live loop's `_claude_edit` should retry a zero-token (empty) envelope
   rather than treating it as "no change → stop" (the flakiness wastes a budget step). Separate gated PR.
-- **E3 model routing — DONE** (above): −65%/−86% at equal resolve-rate; next is a hardness-graded set +
-  an escalation router to find the difficulty frontier.
-- **Real-repo validation** (E4): attach `usage_meter` to the SWE-bench arms; confirm levers hold on real
-  codebases, with confidence intervals.
+- **E3 / Round 2a / E4 — DONE** (above): levers confirmed on real code; routing −86%; frontier beyond
+  bug-fix-class work.
+- **Remaining to bulletproof for public**: more seeds (CIs); a genuinely hard/novel task set + larger real
+  repos to actually *reach* the frontier and exercise the escalation router's rescue value.
+- **Production retry-on-empty** (above) is still a recommended small gated PR.
 
 Pricing used (verified live 2026-06-24, USD/MTok): Opus 4.8 — input $5, output $25, cache-write(5m) $6.25,
-cache-read $0.50. Haiku 4.5 — $1 / $5 / $1.25 / $0.10.
+cache-read $0.50. Sonnet 4.6 — $3 / $15 / $3.75 / $0.30. Haiku 4.5 — $1 / $5 / $1.25 / $0.10.
