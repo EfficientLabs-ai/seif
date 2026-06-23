@@ -1,0 +1,71 @@
+[
+  {
+    "task": "fix_add",
+    "full": {
+      "input_tokens": 31820,
+      "output_tokens": 1345,
+      "cache_creation_input_tokens": 41498,
+      "cache_read_input_tokens": 503897,
+      "cost_usd": 0.7040359999999999,
+      "model": "claude-opus-4-8",
+      "resolved": true,
+      "total": 578560
+    },
+    "lean": {
+      "input_tokens": 2504,
+      "output_tokens": 1145,
+      "cache_creation_input_tokens": 6042,
+      "cache_read_input_tokens": 177025,
+      "cost_usd": 0.16800999999999996,
+      "model": "claude-haiku-4-5-20251001",
+      "resolved": true,
+      "total": 186716
+    }
+  },
+  {
+    "task": "fix_shout",
+    "full": {
+      "input_tokens": 31681,
+      "output_tokens": 1053,
+      "cache_creation_input_tokens": 40894,
+      "cache_read_input_tokens": 227519,
+      "cost_usd": 0.5540769999999999,
+      "model": "claude-opus-4-8",
+      "resolved": true,
+      "total": 301147
+    },
+    "lean": {
+      "input_tokens": 2498,
+      "output_tokens": 706,
+      "cache_creation_input_tokens": 5336,
+      "cache_read_input_tokens": 114268,
+      "cost_usd": 0.12120500000000001,
+      "model": "claude-opus-4-8",
+      "resolved": true,
+      "total": 122808
+    }
+  },
+  {
+    "task": "fix_clamp",
+    "full": {
+      "input_tokens": 31816,
+      "output_tokens": 1518,
+      "cache_creation_input_tokens": 41107,
+      "cache_read_input_tokens": 392299,
+      "cost_usd": 0.6500982500000001,
+      "model": "claude-opus-4-8",
+      "resolved": true,
+      "total": 466740
+    },
+    "lean": {
+      "input_tokens": 2504,
+      "output_tokens": 1034,
+      "cache_creation_input_tokens": 5903,
+      "cache_read_input_tokens": 177083,
+      "cost_usd": 0.16440825000000003,
+      "model": "claude-haiku-4-5-20251001",
+      "resolved": true,
+      "total": 186524
+    }
+  }
+]

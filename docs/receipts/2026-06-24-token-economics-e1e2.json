@@ -1,0 +1,300 @@
+{
+  "e1": [
+    {
+      "task": "e1_add",
+      "seed": 0,
+      "full": {
+        "input_tokens": 31527,
+        "output_tokens": 1082,
+        "cache_creation_input_tokens": 36874,
+        "cache_read_input_tokens": 365672,
+        "cost_usd": 0.5979834999999999,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 435155
+      },
+      "lean": {
+        "input_tokens": 2504,
+        "output_tokens": 975,
+        "cache_creation_input_tokens": 5905,
+        "cache_read_input_tokens": 176583,
+        "cost_usd": 0.16268275,
+        "model": "claude-haiku-4-5-20251001",
+        "resolved": true,
+        "total": 185967
+      }
+    },
+    {
+      "task": "e1_add",
+      "seed": 1,
+      "full": {
+        "input_tokens": 31820,
+        "output_tokens": 1864,
+        "cache_creation_input_tokens": 42110,
+        "cache_read_input_tokens": 508170,
+        "cost_usd": 0.7229725,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 583964
+      },
+      "lean": {
+        "input_tokens": 2502,
+        "output_tokens": 799,
+        "cache_creation_input_tokens": 5847,
+        "cache_read_input_tokens": 155803,
+        "cost_usd": 0.14752525,
+        "model": "claude-haiku-4-5-20251001",
+        "resolved": true,
+        "total": 164951
+      }
+    },
+    {
+      "task": "e1_shout",
+      "seed": 0,
+      "full": {
+        "input_tokens": 29706,
+        "output_tokens": 856,
+        "cache_creation_input_tokens": 38772,
+        "cache_read_input_tokens": 328254,
+        "cost_usd": 0.5763820000000001,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 397588
+      },
+      "lean": {
+        "input_tokens": 2500,
+        "output_tokens": 757,
+        "cache_creation_input_tokens": 5419,
+        "cache_read_input_tokens": 134842,
+        "cost_usd": 0.13329575000000002,
+        "model": "claude-haiku-4-5-20251001",
+        "resolved": true,
+        "total": 143518
+      }
+    },
+    {
+      "task": "e1_shout",
+      "seed": 1,
+      "full": {
+        "input_tokens": 29841,
+        "output_tokens": 1608,
+        "cache_creation_input_tokens": 39575,
+        "cache_read_input_tokens": 490631,
+        "cost_usd": 0.6820642500000001,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 561655
+      },
+      "lean": {
+        "input_tokens": 2637,
+        "output_tokens": 1436,
+        "cache_creation_input_tokens": 6235,
+        "cache_read_input_tokens": 219762,
+        "cost_usd": 0.19851575000000002,
+        "model": "claude-haiku-4-5-20251001",
+        "resolved": true,
+        "total": 230070
+      }
+    },
+    {
+      "task": "e1_clamp",
+      "seed": 0,
+      "full": {
+        "input_tokens": 31683,
+        "output_tokens": 979,
+        "cache_creation_input_tokens": 40467,
+        "cache_read_input_tokens": 281154,
+        "cost_usd": 0.57638575,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 354283
+      },
+      "lean": {
+        "input_tokens": 2504,
+        "output_tokens": 1142,
+        "cache_creation_input_tokens": 6181,
+        "cache_read_input_tokens": 177453,
+        "cost_usd": 0.16903074999999998,
+        "model": "claude-haiku-4-5-20251001",
+        "resolved": true,
+        "total": 187280
+      }
+    },
+    {
+      "task": "e1_clamp",
+      "seed": 1,
+      "full": {
+        "input_tokens": 31683,
+        "output_tokens": 1176,
+        "cache_creation_input_tokens": 40758,
+        "cache_read_input_tokens": 282518,
+        "cost_usd": 0.5838114999999999,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 356135
+      },
+      "lean": {
+        "input_tokens": 2502,
+        "output_tokens": 1006,
+        "cache_creation_input_tokens": 5669,
+        "cache_read_input_tokens": 155819,
+        "cost_usd": 0.15159375,
+        "model": "claude-haiku-4-5-20251001",
+        "resolved": true,
+        "total": 164996
+      }
+    }
+  ],
+  "e2": [
+    {
+      "task": "e2_api",
+      "seed": 0,
+      "scope": [
+        "deep/api.py",
+        "deep/core.py",
+        "deep/ops.py"
+      ],
+      "free": {
+        "input_tokens": 31818,
+        "output_tokens": 2274,
+        "cache_creation_input_tokens": 42384,
+        "cache_read_input_tokens": 455058,
+        "cost_usd": 0.7083689999999999,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 531534
+      },
+      "scoped": {
+        "input_tokens": 31812,
+        "output_tokens": 1498,
+        "cache_creation_input_tokens": 41532,
+        "cache_read_input_tokens": 284936,
+        "cost_usd": 0.598553,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 359778
+      }
+    },
+    {
+      "task": "e2_api",
+      "seed": 1,
+      "scope": [
+        "deep/api.py",
+        "deep/core.py",
+        "deep/ops.py"
+      ],
+      "free": {
+        "input_tokens": 31820,
+        "output_tokens": 1610,
+        "cache_creation_input_tokens": 41582,
+        "cache_read_input_tokens": 505551,
+        "cost_usd": 0.7120130000000001,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 580563
+      },
+      "scoped": {
+        "input_tokens": 31681,
+        "output_tokens": 1166,
+        "cache_creation_input_tokens": 40999,
+        "cache_read_input_tokens": 228529,
+        "cost_usd": 0.5580632500000001,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 302375
+      }
+    },
+    {
+      "task": "e2_alpha",
+      "seed": 0,
+      "scope": [
+        "deep/alpha.py",
+        "deep/beta.py",
+        "deep/gamma.py"
+      ],
+      "free": {
+        "input_tokens": 32082,
+        "output_tokens": 2143,
+        "cache_creation_input_tokens": 42322,
+        "cache_read_input_tokens": 451768,
+        "cost_usd": 0.7043815,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 528315
+      },
+      "scoped": {
+        "input_tokens": 31683,
+        "output_tokens": 1421,
+        "cache_creation_input_tokens": 41216,
+        "cache_read_input_tokens": 284333,
+        "cost_usd": 0.5937064999999999,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 358653
+      }
+    },
+    {
+      "task": "e2_alpha",
+      "seed": 1,
+      "scope": [
+        "deep/alpha.py",
+        "deep/beta.py",
+        "deep/gamma.py"
+      ],
+      "free": {
+        "input_tokens": 31820,
+        "output_tokens": 2154,
+        "cache_creation_input_tokens": 42229,
+        "cache_read_input_tokens": 509116,
+        "cost_usd": 0.73143925,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 585319
+      },
+      "scoped": {
+        "input_tokens": 31683,
+        "output_tokens": 1319,
+        "cache_creation_input_tokens": 41188,
+        "cache_read_input_tokens": 284282,
+        "cost_usd": 0.590956,
+        "model": "claude-opus-4-8",
+        "resolved": true,
+        "total": 358472
+      }
+    }
+  ],
+  "e1_summary": {
+    "n_clean_pairs": 0,
+    "fresh_input_ratio": null,
+    "total_token_ratio": null,
+    "cost_ratio": null,
+    "cost_excl_cacheread_ratio": null
+  },
+  "e2_summary": {
+    "n_clean_pairs": 4,
+    "fresh_input_ratio": [
+      0.9947,
+      0.9876,
+      0.9998,
+      4
+    ],
+    "total_token_ratio": [
+      0.6222,
+      0.5208,
+      0.6789,
+      4
+    ],
+    "cost_ratio": [
+      0.8199,
+      0.7838,
+      0.845,
+      4
+    ],
+    "cost_excl_cacheread_ratio": [
+      0.9499,
+      0.9411,
+      0.9664,
+      4
+    ]
+  }
+}
