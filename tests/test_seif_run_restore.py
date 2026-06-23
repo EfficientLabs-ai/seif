@@ -75,7 +75,8 @@ class ResolveBaseTest(unittest.TestCase):
                 seen["base"] = base
                 return orig_ckpt(repo, base, **kw)
             SR.H.checkpoint = spy_checkpoint
-            SR._claude_edit = lambda *a, **k: 0           # no-op editor → no change → early stop
+            # _claude_edit now returns (rc, usage) for token instrumentation; no-op editor → no change
+            SR._claude_edit = lambda *a, **k: (0, SR.UM.empty())
             SR.seif_run(self.repo, "noop", "true", budget=1, base="last-healthy", make_pr=False)
             self.assertEqual(seen.get("base"), self.c1, "clean-room must use the resolved checkpoint commit")
         finally:
