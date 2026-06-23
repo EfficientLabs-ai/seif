@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import project_harness as H   # noqa: E402
 import integrity_guard as IG  # noqa: E402
 import checkpoint as CP       # noqa: E402  (L4: register verified states / record failure forensics)
+import pr_format as PF        # noqa: E402  (professional, consistent PR body + commit formatting)
 
 CLAUDE = "/home/neo/.local/bin/claude"
 
@@ -137,12 +138,15 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
             return {"accepted": False, "receipt": rec, "patch": patch, "reason": why, "integrity": integrity}
         # success: land on a branch (never main), PR if a remote exists
         branch = f"seif/{_slug(task)}-{time.strftime('%m%d-%H%M%S', time.gmtime())}-{os.urandom(2).hex()}"
-        # commit the EXACT integrity-checked index (-m, not -am) so the PR contents == what was graded
+        # commit the EXACT integrity-checked index (-m, not -am) so the PR contents == what was graded.
+        # conventional-commits message via the house-style builder — same shape as the PR + manual commits.
+        commit_msg = PF.build_commit(
+            "feat", task[:72], scope="seif",
+            bullets=[f"tests pass (exit 0); SEIF receipt {rec.get('h')}"],
+            trailers=["Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"])
         for c in (["git", "-C", wt, "checkout", "-q", "-b", branch],
                   ["git", "-C", wt, "-c", "user.name=Neo The Architect",
-                   "-c", "user.email=founder@efficientlabs.ai", "commit", "-q", "-m",
-                   f"seif: {task[:72]}\n\nEvidence: tests pass (exit 0). Receipt {rec.get('h')}.\n"
-                   f"Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"]):
+                   "-c", "user.email=founder@efficientlabs.ai", "commit", "-q", "-m", commit_msg]):
             subprocess.run(c, check=True, capture_output=True)
         # L4: register this VERIFIED state as a healthy checkpoint (commit + proof + context signature),
         # chained to the prior healthy one — turns the gate's success into a promotable known-good state.
@@ -159,20 +163,38 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                 parent=(CP.last_healthy(repo) or {}).get("id"))
         except Exception:  # noqa: BLE001
             checkpoint = None
-        # honest landing state: 'accepted' = tests passed (true regardless); 'landed' = push+PR actually succeeded
+        # honest landing state: 'accepted' = tests passed (true regardless); 'landed' = push+PR actually succeeded.
+        # PR SUBMISSION IS BEST-EFFORT and ISOLATED: the work is already verified + committed + receipted +
+        # checkpointed above, so a push/format/gh hiccup must NEVER reach the outer discard and lose the branch.
         pr_url, landed = None, False
         if make_pr and _has_remote(repo):
-            push = subprocess.run(["git", "-C", wt, "push", "-q", "-u", "origin", branch], capture_output=True, text=True)
-            if push.returncode != 0:
-                pr_url = f"(push failed rc={push.returncode}: {push.stderr[-160:]})"
-            else:
-                slug = _repo_slug(repo)
-                pr = subprocess.run(["gh", "pr", "create", "-R", slug or repo, "--head", branch, "--fill"],
-                                    cwd=wt, capture_output=True, text=True)
-                if pr.returncode == 0:
-                    pr_url, landed = pr.stdout.strip(), True
+            try:
+                push = subprocess.run(["git", "-C", wt, "push", "-q", "-u", "origin", branch], capture_output=True, text=True)
+                if push.returncode != 0:
+                    pr_url = f"(push failed rc={push.returncode}: {push.stderr[-160:]})"
                 else:
-                    pr_url = f"(branch pushed; pr create rc={pr.returncode}: {pr.stderr[-160:]})"
+                    slug = _repo_slug(repo)
+                    # professional, scannable PR body in the SEIF house style (pr_format) — same shape every PR.
+                    changed = IG.changed_files(patch or "")
+                    title = PF.build_commit("feat", task[:64], scope="seif").splitlines()[0]
+                    body = PF.build_pr_body(
+                        summary=task[:200],
+                        changes=[(f, "—") for f in changed],
+                        verification=[(f"Tests (`{test_cmd}`)", f"pass (exit {(result or {}).get('exit_code')})", True),
+                                      ("Integrity guard", "clean (no protected/test/CI edits, no bypass sentinel)", True),
+                                      ("SEIF receipt", f"`{rec.get('h')}`", True),
+                                      ("L4 checkpoint", f"`{(checkpoint or {}).get('id')}`", bool(checkpoint))],
+                        evidence=((result or {}).get("stdout", "") or "")[-1500:],
+                        issue=PF.issue_ref(task))
+                    pr = subprocess.run(["gh", "pr", "create", "-R", slug or repo, "--head", branch,
+                                         "--title", title, "--body", body],
+                                        cwd=wt, capture_output=True, text=True)
+                    if pr.returncode == 0:
+                        pr_url, landed = pr.stdout.strip(), True
+                    else:
+                        pr_url = f"(branch pushed; pr create rc={pr.returncode}: {pr.stderr[-160:]})"
+            except Exception as e:  # noqa: BLE001 — never lose a VERIFIED branch over a PR-submission error
+                pr_url = f"(pr submission error, branch is safe: {e!r})"
         where = pr_url or ("local branch only (no remote)" if not make_pr or not _has_remote(repo) else None)
         cp_id = (checkpoint or {}).get("id")
         print(f"[/seif] VERIFIED ✓  branch={branch}  landed={landed}  where={where}  "
