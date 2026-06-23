@@ -109,7 +109,7 @@ def run_tests(wt, test_cmd, timeout=600):
         return {"exit_code": 124, "outcome": "timeout", "seconds": timeout, "stdout": "", "stderr": "timeout"}
 
 
-def _receipt(repo, task, test_cmd, result, patch):
+def _receipt(repo, task, test_cmd, result, patch, usage=None):
     rec = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "actor": "seif-harness", "repo": os.path.basename(repo.rstrip("/")), "task": str(task)[:200],
@@ -117,6 +117,10 @@ def _receipt(repo, task, test_cmd, result, patch):
         "exit_code": result.get("exit_code"), "outcome": result.get("outcome"),
         "seconds": result.get("seconds"), "evidence": "os-exit-code; project test suite; no LLM interpretation",
     }
+    # token + cost accounting (optional): makes a receipt cost-attributable so a spend claim is MEASURED.
+    # Added before the hash so usage is covered by the receipt's integrity chain.
+    if usage is not None:
+        rec["usage"] = usage
     try:
         os.makedirs(os.path.dirname(RECEIPTS), exist_ok=True)
         prev = "0" * 16
