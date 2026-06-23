@@ -13,9 +13,20 @@ classes are kept SEPARATE on purpose: cache-read tokens are near-free vs fresh i
 them into one number would let a "savings" be a caching artifact rather than a real reduction in work.
 """
 import json
+import math
 
 _TOKEN_FIELDS = ("input_tokens", "output_tokens",
                  "cache_creation_input_tokens", "cache_read_input_tokens")
+
+
+def _num(v):
+    """Coerce a value to a finite number, or None. Rejects bools (int subclass) and non-finite floats
+    (inf/nan) so `int(inf)` can never raise out of the meter — instrumentation stays no-throw."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    if isinstance(v, float) and not math.isfinite(v):
+        return None
+    return v
 
 
 def empty():
@@ -44,13 +55,11 @@ def parse_usage(stdout):
     usage = obj.get("usage")
     if isinstance(usage, dict):
         for k in _TOKEN_FIELDS:
-            v = usage.get(k)
-            if isinstance(v, bool):           # guard: bools are ints in Python; never count True as 1 token
-                continue
-            if isinstance(v, (int, float)):
+            v = _num(usage.get(k))            # rejects bools + non-finite floats (no int(inf) crash)
+            if v is not None:
                 one[k] = int(v)
-    cost = obj.get("total_cost_usd")
-    if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+    cost = _num(obj.get("total_cost_usd"))
+    if cost is not None:
         one["cost_usd"] = float(cost)
     model = obj.get("model")
     if isinstance(model, str) and model:
@@ -71,10 +80,10 @@ def accumulate(acc, usage):
     Sums token classes + cost, increments the call count, and pins the first non-null model seen (so a
     later empty/failed call cannot blank out the model already recorded)."""
     for k in _TOKEN_FIELDS:
-        v = usage.get(k, 0) or 0
-        acc[k] = acc.get(k, 0) + (int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0)
-    c = usage.get("cost_usd", 0.0) or 0.0
-    acc["cost_usd"] = round(acc.get("cost_usd", 0.0) + (float(c) if isinstance(c, (int, float)) else 0.0), 6)
+        v = _num(usage.get(k))
+        acc[k] = acc.get(k, 0) + (int(v) if v is not None else 0)
+    c = _num(usage.get("cost_usd"))
+    acc["cost_usd"] = round(acc.get("cost_usd", 0.0) + (float(c) if c is not None else 0.0), 6)
     acc["calls"] = acc.get("calls", 0) + 1
     if not acc.get("model") and usage.get("model"):
         acc["model"] = usage["model"]
