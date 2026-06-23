@@ -61,17 +61,35 @@ resolved **6/6 (100%)**, so cost-per-resolved equals cost-per-call here — an e
 
 **Model routing is a real, large cost lever — up to −86% at EQUAL resolve-rate.** (Pricing checks out:
 haiku's lower per-token rate dominates even though it sometimes uses *more* tokens than sonnet.)
-**Honest bound:** these are easy bugs within every model's capability, so resolve-rate is tied at 100% —
-the best case for routing down. The **difficulty frontier** where cheaper models start failing (and
-cost-per-resolved flips) is NOT yet measured; an escalation router (try cheap → escalate on fail) is the
-robust production pattern. TARGET: re-run on a hardness-graded set.
+
+## Round 2a — routing frontier + escalation router (MEASURED, n=1/task)
+
+Difficulty-graded set (2 easy + 3 textbook-hard algorithmic bugs: roman numerals, interval-merge,
+balanced-brackets — each with multi-assertion/edge-case tests), each × {opus, sonnet, haiku}; plus an
+escalation router (haiku → sonnet → opus, escalate on a failing test).
+
+| Model | resolve (all) | $/resolved | hard-only resolve · $/resolved |
+| --- | --- | --- | --- |
+| opus-4-8 | 5/5 | $0.667 | 3/3 · $0.691 |
+| sonnet-4-6 | 5/5 | $0.244 (−63%) | 3/3 · $0.251 |
+| haiku-4-5 | 5/5 | **$0.105 (−84%)** | 3/3 · $0.111 |
+
+- **The routing advantage holds across easy→textbook-hard.** Haiku resolved all three hard algorithmic
+  bugs 100% — so the −84% advantage is robust well past trivial fixes. **The true capability frontier is
+  *further out* than classic algorithms** (they're well-represented in every model's training); finding it
+  needs genuinely novel / real-codebase complexity (→ E4).
+- **Escalation router:** resolved 5/5, all at haiku → **$0.089/resolved (−87% vs opus)**; it never needed
+  to escalate. The logic is validated, but its *rescue value* (catching a cheap-model miss) was not
+  exercised because nothing failed here. That requires a task set haiku actually fails (→ E4).
+- **Honest limits:** n=1 seed; "hard" = textbook algorithms, not novel/real-repo difficulty.
 
 ## What the real levers are
 
 1. **Leaner per-call context** (don't re-send the whole environment every call) — MEASURED: fresh input
    −92% / ~$0.14/call env tax. "File architecture" in the truest sense; partly just context discipline.
-2. **Model routing** (easy work → cheaper model) — MEASURED (E3): −65% (sonnet) to −86% (haiku) at equal
-   resolve-rate, bounded to tasks within the cheaper model's capability.
+2. **Model routing** (route work to the cheapest capable model) — MEASURED (E3 + Round 2a): −63%/−84% at
+   equal resolve-rate, robust through textbook-hard algorithmic bugs; an escalation router gives −87% with
+   an opus safety net. Capability frontier (where cheap models fail) is beyond classic algorithms → E4.
 3. **NOT graph delta-scoping** — REFUTED (E2).
 
 ## Caveats (will not hide)
@@ -86,10 +104,11 @@ robust production pattern. TARGET: re-run on a hardness-graded set.
 
 - **Production retry-on-empty**: the live loop's `_claude_edit` should retry a zero-token (empty) envelope
   rather than treating it as "no change → stop" (the flakiness wastes a budget step). Separate gated PR.
-- **E3 model routing — DONE** (above): −65%/−86% at equal resolve-rate; next is a hardness-graded set +
-  an escalation router to find the difficulty frontier.
-- **Real-repo validation** (E4): attach `usage_meter` to the SWE-bench arms; confirm levers hold on real
-  codebases, with confidence intervals.
+- **E3 model routing — DONE**; **Round 2a frontier + escalation router — DONE** (above): routing holds
+  through textbook-hard; the capability frontier is beyond classic algorithms.
+- **E4 — real-codebase validation** (next): run the levers on a real repo (larger files, novel logic) to
+  (a) confirm the per-call composition + routing hold beyond the toy fixture and (b) actually reach the
+  frontier where cheaper models fail — exercising the escalation router's rescue value. Add seeds for CIs.
 
 Pricing used (verified live 2026-06-24, USD/MTok): Opus 4.8 — input $5, output $25, cache-write(5m) $6.25,
-cache-read $0.50. Haiku 4.5 — $1 / $5 / $1.25 / $0.10.
+cache-read $0.50. Sonnet 4.6 — $3 / $15 / $3.75 / $0.30. Haiku 4.5 — $1 / $5 / $1.25 / $0.10.

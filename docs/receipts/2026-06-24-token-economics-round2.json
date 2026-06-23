@@ -1,0 +1,277 @@
+{
+  "matrix": [
+    {
+      "task": "easy_add",
+      "diff": "easy",
+      "seed": 0,
+      "model": "claude-opus-4-8",
+      "resolved": true,
+      "cost_usd": 0.6178762499999999
+    },
+    {
+      "task": "easy_add",
+      "diff": "easy",
+      "seed": 0,
+      "model": "claude-sonnet-4-6",
+      "resolved": true,
+      "cost_usd": 0.22457024999999997
+    },
+    {
+      "task": "easy_add",
+      "diff": "easy",
+      "seed": 0,
+      "model": "claude-haiku-4-5-20251001",
+      "resolved": true,
+      "cost_usd": 0.11189829999999999
+    },
+    {
+      "task": "easy_clamp",
+      "diff": "easy",
+      "seed": 0,
+      "model": "claude-opus-4-8",
+      "resolved": true,
+      "cost_usd": 0.64410725
+    },
+    {
+      "task": "easy_clamp",
+      "diff": "easy",
+      "seed": 0,
+      "model": "claude-sonnet-4-6",
+      "resolved": true,
+      "cost_usd": 0.24149954999999998
+    },
+    {
+      "task": "easy_clamp",
+      "diff": "easy",
+      "seed": 0,
+      "model": "claude-haiku-4-5-20251001",
+      "resolved": true,
+      "cost_usd": 0.07926895
+    },
+    {
+      "task": "hard_roman",
+      "diff": "hard",
+      "seed": 0,
+      "model": "claude-opus-4-8",
+      "resolved": true,
+      "cost_usd": 0.6336997500000001
+    },
+    {
+      "task": "hard_roman",
+      "diff": "hard",
+      "seed": 0,
+      "model": "claude-sonnet-4-6",
+      "resolved": true,
+      "cost_usd": 0.2628219
+    },
+    {
+      "task": "hard_roman",
+      "diff": "hard",
+      "seed": 0,
+      "model": "claude-haiku-4-5-20251001",
+      "resolved": true,
+      "cost_usd": 0.10462440000000002
+    },
+    {
+      "task": "hard_merge",
+      "diff": "hard",
+      "seed": 0,
+      "model": "claude-opus-4-8",
+      "resolved": true,
+      "cost_usd": 0.6821530000000001
+    },
+    {
+      "task": "hard_merge",
+      "diff": "hard",
+      "seed": 0,
+      "model": "claude-sonnet-4-6",
+      "resolved": true,
+      "cost_usd": 0.261045
+    },
+    {
+      "task": "hard_merge",
+      "diff": "hard",
+      "seed": 0,
+      "model": "claude-haiku-4-5-20251001",
+      "resolved": true,
+      "cost_usd": 0.13030005
+    },
+    {
+      "task": "hard_balanced",
+      "diff": "hard",
+      "seed": 0,
+      "model": "claude-opus-4-8",
+      "resolved": true,
+      "cost_usd": 0.7586362500000001
+    },
+    {
+      "task": "hard_balanced",
+      "diff": "hard",
+      "seed": 0,
+      "model": "claude-sonnet-4-6",
+      "resolved": true,
+      "cost_usd": 0.22902389999999997
+    },
+    {
+      "task": "hard_balanced",
+      "diff": "hard",
+      "seed": 0,
+      "model": "claude-haiku-4-5-20251001",
+      "resolved": true,
+      "cost_usd": 0.0966075
+    }
+  ],
+  "escalation": [
+    {
+      "resolved": true,
+      "resolver": "claude-haiku-4-5-20251001",
+      "cost_usd": 0.066349,
+      "attempts": [
+        {
+          "model": "claude-haiku-4-5-20251001",
+          "resolved": true,
+          "cost": 0.0663488
+        }
+      ],
+      "task": "easy_add",
+      "diff": "easy"
+    },
+    {
+      "resolved": true,
+      "resolver": "claude-haiku-4-5-20251001",
+      "cost_usd": 0.092527,
+      "attempts": [
+        {
+          "model": "claude-haiku-4-5-20251001",
+          "resolved": true,
+          "cost": 0.09252745000000001
+        }
+      ],
+      "task": "easy_clamp",
+      "diff": "easy"
+    },
+    {
+      "resolved": true,
+      "resolver": "claude-haiku-4-5-20251001",
+      "cost_usd": 0.105467,
+      "attempts": [
+        {
+          "model": "claude-haiku-4-5-20251001",
+          "resolved": true,
+          "cost": 0.10546695
+        }
+      ],
+      "task": "hard_roman",
+      "diff": "hard"
+    },
+    {
+      "resolved": true,
+      "resolver": "claude-haiku-4-5-20251001",
+      "cost_usd": 0.088012,
+      "attempts": [
+        {
+          "model": "claude-haiku-4-5-20251001",
+          "resolved": true,
+          "cost": 0.0880116
+        }
+      ],
+      "task": "hard_merge",
+      "diff": "hard"
+    },
+    {
+      "resolved": true,
+      "resolver": "claude-haiku-4-5-20251001",
+      "cost_usd": 0.09353,
+      "attempts": [
+        {
+          "model": "claude-haiku-4-5-20251001",
+          "resolved": true,
+          "cost": 0.0935295
+        }
+      ],
+      "task": "hard_balanced",
+      "diff": "hard"
+    }
+  ],
+  "frontier": {
+    "claude-opus-4-8": {
+      "all": {
+        "runs": 5,
+        "resolved": 5,
+        "resolve_rate": 1.0,
+        "cost_per_resolved": 0.667295,
+        "total_cost": 3.336473
+      },
+      "easy": {
+        "runs": 2,
+        "resolved": 2,
+        "resolve_rate": 1.0,
+        "cost_per_resolved": 0.630992,
+        "total_cost": 1.261983
+      },
+      "hard": {
+        "runs": 3,
+        "resolved": 3,
+        "resolve_rate": 1.0,
+        "cost_per_resolved": 0.691496,
+        "total_cost": 2.074489
+      }
+    },
+    "claude-sonnet-4-6": {
+      "all": {
+        "runs": 5,
+        "resolved": 5,
+        "resolve_rate": 1.0,
+        "cost_per_resolved": 0.243792,
+        "total_cost": 1.218961
+      },
+      "easy": {
+        "runs": 2,
+        "resolved": 2,
+        "resolve_rate": 1.0,
+        "cost_per_resolved": 0.233035,
+        "total_cost": 0.46607
+      },
+      "hard": {
+        "runs": 3,
+        "resolved": 3,
+        "resolve_rate": 1.0,
+        "cost_per_resolved": 0.250964,
+        "total_cost": 0.752891
+      }
+    },
+    "claude-haiku-4-5-20251001": {
+      "all": {
+        "runs": 5,
+        "resolved": 5,
+        "resolve_rate": 1.0,
+        "cost_per_resolved": 0.10454,
+        "total_cost": 0.522699
+      },
+      "easy": {
+        "runs": 2,
+        "resolved": 2,
+        "resolve_rate": 1.0,
+        "cost_per_resolved": 0.095584,
+        "total_cost": 0.191167
+      },
+      "hard": {
+        "runs": 3,
+        "resolved": 3,
+        "resolve_rate": 1.0,
+        "cost_per_resolved": 0.110511,
+        "total_cost": 0.331532
+      }
+    }
+  },
+  "router": {
+    "tasks": 5,
+    "resolved": 5,
+    "resolve_rate": 1.0,
+    "total_cost": 0.445885,
+    "cost_per_resolved": 0.089177,
+    "resolver_mix": {
+      "claude-haiku-4-5-20251001": 5
+    }
+  }
+}
