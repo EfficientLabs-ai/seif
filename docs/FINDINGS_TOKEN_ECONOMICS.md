@@ -48,13 +48,31 @@ pricing), **REFUTED** (hypothesis tested and rejected), **TARGET** (not yet prov
 **regression-safety** feature (what to re-test), not a token-savings feature. (It is also reverse-import
 and built-but-not-wired — see the architecture review.)
 
+## E3 — model routing (MEASURED)
+
+Hold context constant (full env), vary ONLY the model across the same 3 tasks × 2 seeds. All three models
+resolved **6/6 (100%)**, so cost-per-resolved equals cost-per-call here — an equal-quality comparison.
+
+| Model | resolve | $/resolved | tokens | vs opus |
+| --- | --- | --- | --- | --- |
+| claude-opus-4-8 | 6/6 | **$0.625** | ~430K | — |
+| claude-sonnet-4-6 | 6/6 | **$0.220** | ~232K | **−65%** (2.8×) |
+| claude-haiku-4-5 | 6/6 | **$0.085** | ~293K | **−86%** (7.4×) |
+
+**Model routing is a real, large cost lever — up to −86% at EQUAL resolve-rate.** (Pricing checks out:
+haiku's lower per-token rate dominates even though it sometimes uses *more* tokens than sonnet.)
+**Honest bound:** these are easy bugs within every model's capability, so resolve-rate is tied at 100% —
+the best case for routing down. The **difficulty frontier** where cheaper models start failing (and
+cost-per-resolved flips) is NOT yet measured; an escalation router (try cheap → escalate on fail) is the
+robust production pattern. TARGET: re-run on a hardness-graded set.
+
 ## What the real levers are
 
-1. **Leaner per-call context** (don't re-send the whole environment every call) — the big, MEASURED lever.
-   This is "file architecture" in the truest sense; partly it is just context discipline most setups skip.
-2. **Model routing** (easy work → cheaper model) — real and obvious, but **not yet isolated**; the only
-   cheaper-model data here came from the accidental haiku downgrade (confounded). TARGET: a deliberate,
-   quality-controlled routing A/B (cost-per-*resolved*, not per-call).
+1. **Leaner per-call context** (don't re-send the whole environment every call) — MEASURED: fresh input
+   −92% / ~$0.14/call env tax. "File architecture" in the truest sense; partly just context discipline.
+2. **Model routing** (easy work → cheaper model) — MEASURED (E3): −65% (sonnet) to −86% (haiku) at equal
+   resolve-rate, bounded to tasks within the cheaper model's capability.
+3. **NOT graph delta-scoping** — REFUTED (E2).
 
 ## Caveats (will not hide)
 
@@ -68,8 +86,10 @@ and built-but-not-wired — see the architecture review.)
 
 - **Production retry-on-empty**: the live loop's `_claude_edit` should retry a zero-token (empty) envelope
   rather than treating it as "no change → stop" (the flakiness wastes a budget step). Separate gated PR.
-- **Model routing experiment** (E3) and **real-repo validation** (E4) to convert the TARGET levers to
-  MEASURED, with confidence intervals.
+- **E3 model routing — DONE** (above): −65%/−86% at equal resolve-rate; next is a hardness-graded set +
+  an escalation router to find the difficulty frontier.
+- **Real-repo validation** (E4): attach `usage_meter` to the SWE-bench arms; confirm levers hold on real
+  codebases, with confidence intervals.
 
 Pricing used (verified live 2026-06-24, USD/MTok): Opus 4.8 — input $5, output $25, cache-write(5m) $6.25,
 cache-read $0.50. Haiku 4.5 — $1 / $5 / $1.25 / $0.10.
