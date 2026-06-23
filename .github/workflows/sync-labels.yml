@@ -1,0 +1,81 @@
+name: Sync Labels
+
+# Applies .github/labels.yml (the canonical source of truth) to the repository's labels.
+# Runs ONLY after a change lands on main (requirement: label changes go through branch -> tests ->
+# review -> PR -> founder merge). Idempotent (create-or-update). NEVER deletes unknown/external labels
+# — it reports them as drift for manual review. Manual-dispatch allowed for an on-demand reconcile.
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/labels.yml']
+  workflow_dispatch: {}
+
+permissions:
+  issues: write        # labels live under the issues scope
+  contents: read
+
+concurrency:
+  group: sync-labels
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Reconcile labels to .github/labels.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parser
+        run: pip install --quiet pyyaml
+      - name: Apply labels (idempotent) + report drift (never delete)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+          import yaml
+
+          repo = os.environ["REPO"]
+          spec = yaml.safe_load(open(".github/labels.yml")) or []
+          want = {}
+          for item in spec:
+              if isinstance(item, dict) and item.get("name"):
+                  want[item["name"]] = {
+                      "color": str(item.get("color", "ededed")).lstrip("#").lower(),
+                      "desc": item.get("description", "") or "",
+                  }
+          if not want:
+              print("::error::labels.yml parsed to zero labels — refusing to run")
+              sys.exit(1)
+
+          cur = json.loads(subprocess.run(
+              ["gh", "label", "list", "-R", repo, "--limit", "300",
+               "--json", "name,color,description"],
+              capture_output=True, text=True, check=True).stdout or "[]")
+          have = {c["name"]: c for c in cur}
+
+          created = updated = reconciled = 0
+          for name, meta in want.items():
+              # --force = create if absent, update if present → idempotent + reconciles metadata drift.
+              subprocess.run(
+                  ["gh", "label", "create", name, "-R", repo,
+                   "--color", meta["color"], "--description", meta["desc"], "--force"],
+                  capture_output=True, text=True, check=True)
+              if name not in have:
+                  created += 1
+              else:
+                  updated += 1
+                  h = have[name]
+                  if (h.get("color", "").lower() != meta["color"]) or ((h.get("description") or "") != meta["desc"]):
+                      reconciled += 1
+                      print(f"::notice::reconciled metadata drift on '{name}'")
+
+          # Drift: labels present on the repo but NOT in labels.yml. REPORT — never delete (req. 6).
+          drift = sorted(set(have) - set(want))
+          print(f"::notice::labels synced from labels.yml — created {created}, updated {updated}, "
+                f"metadata-reconciled {reconciled}")
+          if drift:
+              print(f"::warning::label drift — {len(drift)} repo label(s) are NOT in labels.yml and were "
+                    f"NOT deleted (remove manually if intended): {', '.join(drift)}")
+          PY
