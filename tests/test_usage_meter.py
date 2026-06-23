@@ -57,6 +57,23 @@ class ParseUsageTest(unittest.TestCase):
         self.assertEqual(u["input_tokens"], 0)
         self.assertEqual(u["cost_usd"], 0.0)
 
+    def test_nonfinite_and_overflow_numbers_do_not_raise(self):
+        # JSON-valid but pathological values (Infinity/NaN, 1e309 → inf) must degrade to zero, never raise
+        # int(inf) raises OverflowError — the meter must never let that escape into the loop.
+        for payload in ['{"usage":{"input_tokens":1e309},"total_cost_usd":1e309}',
+                        '{"usage":{"input_tokens":Infinity,"output_tokens":NaN}}',
+                        '{"usage":{"input_tokens":-Infinity}}']:
+            u = UM.parse_usage(payload)                 # must not raise
+            self.assertEqual(u["input_tokens"], 0)
+            self.assertEqual(u["output_tokens"], 0)
+            self.assertEqual(u["cost_usd"], 0.0)
+        # and the same value must be safe through accumulate()
+        acc = UM.empty()
+        UM.accumulate(acc, {"input_tokens": float("inf"), "cost_usd": float("nan")})
+        self.assertEqual(acc["input_tokens"], 0)
+        self.assertEqual(acc["cost_usd"], 0.0)
+        self.assertEqual(acc["calls"], 1)
+
 
 class AccumulateTest(unittest.TestCase):
     def test_sums_classes_and_counts_calls(self):
