@@ -21,6 +21,7 @@ import project_harness as H   # noqa: E402
 import integrity_guard as IG  # noqa: E402
 import checkpoint as CP       # noqa: E402  (L4: register verified states / record failure forensics)
 import pr_format as PF        # noqa: E402  (professional, consistent PR body + commit formatting)
+import usage_meter as UM      # noqa: E402  (token + cost accounting — make every model call measurable)
 
 CLAUDE = "/home/neo/.local/bin/claude"
 
@@ -50,11 +51,13 @@ def _claude_edit(worktree, task, feedback, first, timeout):
                   f"The project's tests are STILL FAILING:\n{feedback[:4500]}\n\n"
                   "Fix the SOURCE so the tests pass. Do NOT edit tests. Make the change and stop.")
     try:
-        p = subprocess.run([CLAUDE, "-p", "--permission-mode", "acceptEdits", prompt],
+        # --output-format json makes the call cost-attributable: the result envelope carries usage + cost.
+        # acceptEdits still applies (edits happen); only the FINAL print is a JSON envelope we meter.
+        p = subprocess.run([CLAUDE, "-p", "--output-format", "json", "--permission-mode", "acceptEdits", prompt],
                            cwd=worktree, timeout=timeout, capture_output=True, text=True)
-        return p.returncode
+        return p.returncode, UM.parse_usage(p.stdout)
     except subprocess.TimeoutExpired:
-        return None
+        return None, UM.parse_usage("")
 
 
 def _has_remote(repo):
@@ -88,6 +91,7 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
     base = _resolve_base(repo, base)
     wt = H.checkpoint(repo, base)
     feedback, passed, result, patch, integrity = "", False, None, "", None
+    spend = UM.empty()   # token + cost accounting, summed across every attempt of this task
     print(f"[/seif] repo={os.path.basename(repo)} test='{test_cmd}' budget={budget}\n[/seif] clean room: {wt}")
     try:
         def _stage_diff():
@@ -96,7 +100,8 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
 
         for step in range(1, budget + 1):
             integrity = None                          # never carry a prior step's verdict forward
-            rc = _claude_edit(wt, task, feedback, step == 1, timeout)
+            rc, usage = _claude_edit(wt, task, feedback, step == 1, timeout)
+            UM.accumulate(spend, usage)               # meter every model call, pass or fail
             patch = _stage_diff()
             if not patch.strip():
                 print(f"[/seif] step {step}: agent made no change (rc={rc}) — stop")
@@ -122,7 +127,9 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                             "tests or test config. Make the source change that passes the EXISTING tests.")
                 continue
             feedback = (result.get("stdout", "") + "\n" + result.get("stderr", ""))[-4500:]
-        rec = H._receipt(repo, task, test_cmd, result or {"outcome": "no_change", "exit_code": None}, patch)
+        print(f"[/seif] spend: {UM.summary_line(spend)}")
+        rec = H._receipt(repo, task, test_cmd, result or {"outcome": "no_change", "exit_code": None},
+                         patch, usage=spend)
         if not passed:
             H.discard(repo, wt)                                   # ATMS rollback — main untouched
             why = {"integrity_violation": "integrity_violation",
@@ -135,7 +142,8 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
             except Exception:  # noqa: BLE001
                 pass
             print(f"[/seif] NOT VERIFIED ({why}) — rolled back. receipt h={rec.get('h')}")
-            return {"accepted": False, "receipt": rec, "patch": patch, "reason": why, "integrity": integrity}
+            return {"accepted": False, "receipt": rec, "patch": patch, "reason": why,
+                    "integrity": integrity, "usage": spend}
         # success: land on a branch (never main), PR if a remote exists
         branch = f"seif/{_slug(task)}-{time.strftime('%m%d-%H%M%S', time.gmtime())}-{os.urandom(2).hex()}"
         # commit the EXACT integrity-checked index (-m, not -am) so the PR contents == what was graded.
@@ -202,7 +210,7 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
         # leave the worktree in place so the founder can inspect; caller/founder removes after merge
         return {"accepted": True, "landed": landed, "branch": branch, "pr": pr_url, "worktree": wt,
                 "receipt": rec, "patch": patch, "reason": "verified", "integrity": integrity,
-                "checkpoint": checkpoint}
+                "checkpoint": checkpoint, "usage": spend}
     except Exception:
         H.discard(repo, wt)
         raise
@@ -251,7 +259,7 @@ def _selftest():
         def cheat(wt, *a, **k):
             open(os.path.join(wt, "test_calc.py"), "w").write(
                 "import unittest\nclass T(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n")
-            return 0
+            return 0, UM.empty()                          # (rc, usage) — new instrumented contract
         _claude_edit = cheat
         r1 = seif_run(repo, "make tests pass", cmd, budget=1, base="HEAD", make_pr=False)
         assert not r1["accepted"] and r1["reason"] == "integrity_violation", r1
@@ -264,7 +272,7 @@ def _selftest():
         # case 2: HONEST source fix -> accepted, lands on a local branch (no remote)
         def honest(wt, *a, **k):
             open(os.path.join(wt, "calc.py"), "w").write("def add(a, b):\n    return a + b\n")
-            return 0
+            return 0, UM.empty()                          # (rc, usage) — new instrumented contract
         _claude_edit = honest
         r2 = seif_run(repo, "fix add", cmd, budget=1, base="HEAD", make_pr=False)
         assert r2["accepted"] and r2["reason"] == "verified", r2
