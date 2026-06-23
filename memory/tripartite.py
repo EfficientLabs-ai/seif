@@ -73,14 +73,24 @@ class WorkingMemory:
     """Hot working-set KV with optional TTL. Redis if reachable, else an atomic JSON file.
 
     Redis URL source order: explicit `redis_url` arg → $SEIF_REDIS_URL → ~/.config/seif/redis.url (written
-    when L1 Redis is provisioned). If none, stays on the file backend with zero probe latency."""
+    when L1 Redis is provisioned). If none, stays on the file backend with zero probe latency.
+
+    An explicit `path` pins this instance to that file: it means the caller wants a file-backed store at
+    that location (namespaced/isolated stores, tests, quarantine semantics), so AMBIENT Redis config
+    (env var / URL file) is ignored. Pass `redis_url` explicitly to use Redis with a custom path."""
 
     def __init__(self, path=None, namespace="seif", redis_url=None):
         self.namespace = namespace
         self.path = path or os.path.join(STORE, "working.json")
         self._r = None
         self.backend = "file"
-        url = redis_url or os.environ.get("SEIF_REDIS_URL") or _configured_redis_url()
+        # Ambient Redis (env/URL file) only auto-binds the DEFAULT store; a NON-EMPTY explicit `path` is
+        # honored as a file backend unless Redis is explicitly requested via `redis_url`. (An empty-string
+        # path is not "explicit" — it falls through to the default + ambient resolution.)
+        if path:
+            url = redis_url
+        else:
+            url = redis_url or os.environ.get("SEIF_REDIS_URL") or _configured_redis_url()
         if url:
             try:
                 import redis  # noqa: F401  (optional)
