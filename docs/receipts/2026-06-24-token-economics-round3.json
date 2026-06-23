@@ -1,0 +1,274 @@
+{
+  "rows": [
+    {
+      "fresh_input": 31697,
+      "output": 1413,
+      "cache_read": 446385,
+      "cache_create": 40967,
+      "cost_usd": 0.67304625,
+      "resolved": true,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": "claude-opus-4-8",
+      "model_mismatch": false,
+      "task": "add",
+      "seed": 0,
+      "arm": "full"
+    },
+    {
+      "fresh_input": 18041,
+      "output": 1003,
+      "cache_read": 186976,
+      "cache_create": 23258,
+      "cost_usd": 0.3541304999999999,
+      "resolved": true,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": "claude-opus-4-8",
+      "model_mismatch": false,
+      "task": "add",
+      "seed": 0,
+      "arm": "noMCP"
+    },
+    {
+      "fresh_input": 14533,
+      "output": 2242,
+      "cache_read": 298411,
+      "cache_create": 21410,
+      "cost_usd": 0.4123200000000001,
+      "resolved": true,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": "claude-haiku-4-5-20251001",
+      "model_mismatch": true,
+      "task": "add",
+      "seed": 0,
+      "arm": "noUser"
+    },
+    {
+      "fresh_input": 0,
+      "output": 0,
+      "cache_read": 0,
+      "cache_create": 0,
+      "cost_usd": 0.0,
+      "resolved": false,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": null,
+      "model_mismatch": true,
+      "task": "add",
+      "seed": 0,
+      "arm": "bare"
+    },
+    {
+      "fresh_input": 31560,
+      "output": 956,
+      "cache_read": 225782,
+      "cache_create": 40529,
+      "cost_usd": 0.5478972500000001,
+      "resolved": true,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": "claude-opus-4-8",
+      "model_mismatch": false,
+      "task": "add",
+      "seed": 1,
+      "arm": "full"
+    },
+    {
+      "fresh_input": 18043,
+      "output": 1089,
+      "cache_read": 223366,
+      "cache_create": 22929,
+      "cost_usd": 0.37242925000000004,
+      "resolved": true,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": "claude-opus-4-8",
+      "model_mismatch": false,
+      "task": "add",
+      "seed": 1,
+      "arm": "noMCP"
+    },
+    {
+      "fresh_input": 14667,
+      "output": 571,
+      "cache_read": 114464,
+      "cache_create": 19517,
+      "cost_usd": 0.26741025,
+      "resolved": true,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": "claude-haiku-4-5-20251001",
+      "model_mismatch": true,
+      "task": "add",
+      "seed": 1,
+      "arm": "noUser"
+    },
+    {
+      "fresh_input": 0,
+      "output": 0,
+      "cache_read": 0,
+      "cache_create": 0,
+      "cost_usd": 0.0,
+      "resolved": false,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": null,
+      "model_mismatch": true,
+      "task": "add",
+      "seed": 1,
+      "arm": "bare"
+    },
+    {
+      "fresh_input": 31745,
+      "output": 1509,
+      "cache_read": 392015,
+      "cache_create": 40967,
+      "cost_usd": 0.64850125,
+      "resolved": true,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": "claude-opus-4-8",
+      "model_mismatch": false,
+      "task": "clamp",
+      "seed": 0,
+      "arm": "full"
+    },
+    {
+      "fresh_input": 18043,
+      "output": 1091,
+      "cache_read": 224325,
+      "cache_create": 23015,
+      "cost_usd": 0.37349625000000003,
+      "resolved": true,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": "claude-opus-4-8",
+      "model_mismatch": false,
+      "task": "clamp",
+      "seed": 0,
+      "arm": "noMCP"
+    },
+    {
+      "fresh_input": 14691,
+      "output": 815,
+      "cache_read": 188713,
+      "cache_create": 19834,
+      "cost_usd": 0.312749,
+      "resolved": true,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": "claude-haiku-4-5-20251001",
+      "model_mismatch": true,
+      "task": "clamp",
+      "seed": 0,
+      "arm": "noUser"
+    },
+    {
+      "fresh_input": 0,
+      "output": 0,
+      "cache_read": 0,
+      "cache_create": 0,
+      "cost_usd": 0.0,
+      "resolved": false,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": null,
+      "model_mismatch": true,
+      "task": "clamp",
+      "seed": 0,
+      "arm": "bare"
+    },
+    {
+      "fresh_input": 31715,
+      "output": 1369,
+      "cache_read": 282422,
+      "cache_create": 41085,
+      "cost_usd": 0.59079225,
+      "resolved": true,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": "claude-opus-4-8",
+      "model_mismatch": false,
+      "task": "clamp",
+      "seed": 1,
+      "arm": "full"
+    },
+    {
+      "fresh_input": 18182,
+      "output": 1985,
+      "cache_read": 418887,
+      "cache_create": 24116,
+      "cost_usd": 0.5007035,
+      "resolved": true,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": "claude-opus-4-8",
+      "model_mismatch": false,
+      "task": "clamp",
+      "seed": 1,
+      "arm": "noMCP"
+    },
+    {
+      "fresh_input": 14832,
+      "output": 1566,
+      "cache_read": 333143,
+      "cache_create": 20691,
+      "cost_usd": 0.4098002500000001,
+      "resolved": true,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": "claude-opus-4-8",
+      "model_mismatch": false,
+      "task": "clamp",
+      "seed": 1,
+      "arm": "noUser"
+    },
+    {
+      "fresh_input": 0,
+      "output": 0,
+      "cache_read": 0,
+      "cache_create": 0,
+      "cost_usd": 0.0,
+      "resolved": false,
+      "model_requested": "claude-opus-4-8",
+      "model_actual": null,
+      "model_mismatch": true,
+      "task": "clamp",
+      "seed": 1,
+      "arm": "bare"
+    }
+  ],
+  "per_arm": {
+    "full": {
+      "fresh_input": 31679.25,
+      "cache_read": 336651.0,
+      "cost_usd": 0.62,
+      "resolve_rate": 1.0,
+      "models": [
+        "claude-opus-4-8"
+      ]
+    },
+    "noMCP": {
+      "fresh_input": 18077.25,
+      "cache_read": 263388.5,
+      "cost_usd": 0.4,
+      "resolve_rate": 1.0,
+      "models": [
+        "claude-opus-4-8"
+      ]
+    },
+    "noUser": {
+      "fresh_input": 14680.75,
+      "cache_read": 233682.75,
+      "cost_usd": 0.35,
+      "resolve_rate": 1.0,
+      "models": [
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-8"
+      ]
+    },
+    "bare": {
+      "fresh_input": null,
+      "cache_read": null,
+      "cost_usd": null,
+      "resolve_rate": 0.0,
+      "models": []
+    }
+  },
+  "decomposition": {
+    "total_env_tax_fresh_input": null,
+    "mcp_fresh_input": 13602.0,
+    "user_config_fresh_input": 16998.5,
+    "failed_arms": [
+      "bare"
+    ]
+  },
+  "model_mismatches": 7
+}
