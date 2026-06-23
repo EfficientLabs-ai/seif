@@ -45,6 +45,36 @@ class ClaudeEditUsageTest(unittest.TestCase):
         self.assertEqual(usage["input_tokens"], 0)
         self.assertEqual(usage["cost_usd"], 0.0)
 
+    def test_retry_on_empty_envelope_then_succeeds(self):
+        # an empty (zero-token) envelope is an infra hiccup → retry, not "no change". 2 empty then 1 real.
+        empty = mock.Mock(returncode=0, stdout='{"usage":{"input_tokens":0}}', stderr="")
+        real = mock.Mock(returncode=0, stdout=_ENVELOPE, stderr="")
+        with mock.patch.object(seif_run.subprocess, "run", side_effect=[empty, empty, real]) as run:
+            rc, usage = seif_run._claude_edit("/tmp", "t", "", True, 5)
+        self.assertEqual(usage["input_tokens"], 100)      # got the real call's usage after 2 retries
+        self.assertEqual(run.call_count, 3)
+
+    def test_retry_on_empty_gives_up_after_three(self):
+        empty = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch.object(seif_run.subprocess, "run", return_value=empty) as run:
+            rc, usage = seif_run._claude_edit("/tmp", "t", "", True, 5)
+        self.assertEqual(usage["input_tokens"], 0)        # still empty → caller treats as no_change
+        self.assertEqual(run.call_count, 3)               # bounded
+
+    def test_model_flag_passed_when_pinned(self):
+        fake = mock.Mock(returncode=0, stdout=_ENVELOPE, stderr="")
+        with mock.patch.object(seif_run.subprocess, "run", return_value=fake) as run:
+            seif_run._claude_edit("/tmp", "t", "", True, 5, model="claude-opus-4-8")
+        argv = run.call_args.args[0]
+        self.assertIn("--model", argv)
+        self.assertIn("claude-opus-4-8", argv)
+
+    def test_no_model_flag_by_default(self):
+        fake = mock.Mock(returncode=0, stdout=_ENVELOPE, stderr="")
+        with mock.patch.object(seif_run.subprocess, "run", return_value=fake) as run:
+            seif_run._claude_edit("/tmp", "t", "", True, 5)
+        self.assertNotIn("--model", run.call_args.args[0])
+
 
 class ReceiptUsageTest(unittest.TestCase):
     def setUp(self):
