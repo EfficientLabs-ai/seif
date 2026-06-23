@@ -1,0 +1,87 @@
+name: Feature request
+description: Propose a new feature or enhancement for EfficientLabs-ai/seif.
+title: "feat: "
+labels: ["enhancement", "needs-review"]
+assignees:
+  - Neo-The-Architect
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an enhancement. Fill in every section so the request can be reviewed against the operating standard.
+        A clear problem, a concrete proposal, and acceptance criteria are what move a feature from idea to merged work.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Motivation
+      description: What is missing, painful, or limiting today? Explain the underlying need, not just the desired feature.
+      placeholder: |
+        Today, users have to ... which is slow / error-prone / impossible because ...
+        This matters because ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: Describe the change you want. Be concrete about behavior, interface, and how a user would experience it.
+      placeholder: |
+        Add ... so that ...
+        Expected behavior: ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: User / Project impact
+      description: Who benefits most and where does this move the needle?
+      options:
+        - "impact:user — improves the end-user experience"
+        - "impact:security — reduces risk or hardens the system"
+        - "impact:infra — strengthens infrastructure, tooling, or CI"
+        - "impact:docs — improves documentation or clarity"
+        - "impact:revenue — drives growth, conversion, or revenue"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches did you weigh, and why is this one preferred? Include "do nothing" if relevant.
+      placeholder: |
+        - Alternative A: ... (rejected because ...)
+        - Alternative B: ... (rejected because ...)
+    validations:
+      required: false
+
+  - type: textarea
+    id: scope-acceptance
+    attributes:
+      label: Scope / Acceptance criteria
+      description: Define what "done" looks like. List the testable conditions that must hold for this to ship.
+      placeholder: |
+        In scope:
+        - ...
+        Out of scope:
+        - ...
+        Acceptance criteria:
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: links-context
+    attributes:
+      label: Links / Context
+      description: Related issues, ADRs, commits, docs, or product decisions. Reference issues with "#N".
+      placeholder: |
+        - Related issue: #
+        - ADR: docs/adr/...
+        - Doc / decision: ...
+    validations:
+      required: false

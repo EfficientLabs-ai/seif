@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Operating Standard
+    url: https://github.com/EfficientLabs-ai/seif/blob/main/docs/github-operating-standard.md
+    about: Read the Efficient Labs GitHub Operating Standard before opening an issue or PR — branch flow, conventional commits, PR structure, definition of done, labels, and proof/receipts.
+  - name: Contributing Guide
+    url: https://github.com/EfficientLabs-ai/seif/blob/main/CONTRIBUTING.md
+    about: How to contribute to EfficientLabs-ai/seif — setup, workflow, and the squash-merge-to-protected-main process.

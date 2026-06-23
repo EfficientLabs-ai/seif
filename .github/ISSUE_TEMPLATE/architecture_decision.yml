@@ -1,0 +1,119 @@
+name: "Architecture Decision Record (ADR)"
+description: "Propose an Architecture Decision Record for review. An accepted ADR is recorded under docs/adr/."
+title: "ADR: "
+labels: ["architecture-decision", "needs-review"]
+assignees: ["Neo-The-Architect"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Propose an Architecture Decision Record
+
+        Use this form to propose a durable architectural decision for the SEIF operating system.
+
+        - Keep it concise and operator-friendly: context, options, the decision, and its consequences.
+        - This issue is the **proposal**. Once the decision is accepted in review, it is recorded as a numbered ADR under **`docs/adr/`** and this issue is closed with a link to that ADR.
+        - Title is prefixed with `ADR: ` — complete it with a short, imperative summary of the decision.
+        - Labels `architecture-decision` and `needs-review` are applied automatically.
+
+  - type: textarea
+    id: context-problem
+    attributes:
+      label: Context / Problem
+      description: "What situation, constraint, or problem forces a decision now? What is broken, missing, unclear, risky, or incomplete without it?"
+      placeholder: "Describe the architectural context and the problem that requires a decision."
+    validations:
+      required: true
+
+  - type: textarea
+    id: decision-drivers
+    attributes:
+      label: Decision Drivers
+      description: "The forces, requirements, and constraints that shape this decision (performance, security, governance, cost, maintainability, reversibility, etc.)."
+      placeholder: |
+        - Driver 1 (e.g. main stays protected; no chaotic main-branch commits)
+        - Driver 2 (e.g. proof/receipts must be verifiable before merge)
+        - Driver 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: options-considered
+    attributes:
+      label: Options Considered
+      description: "The realistic options you evaluated, with a brief note on the trade-offs of each. Include the status quo / do-nothing option where relevant."
+      placeholder: |
+        ### Option A — <name>
+        - Pros:
+        - Cons:
+
+        ### Option B — <name>
+        - Pros:
+        - Cons:
+
+        ### Option C — Do nothing / status quo
+        - Pros:
+        - Cons:
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-decision
+    attributes:
+      label: Proposed Decision
+      description: "The option you propose to adopt, stated as a clear, imperative decision. Explain why it wins over the alternatives."
+      placeholder: "We will <decision> because <rationale>."
+    validations:
+      required: true
+
+  - type: textarea
+    id: consequences-tradeoffs
+    attributes:
+      label: Consequences / Trade-offs
+      description: "What becomes easier, what becomes harder, and what new obligations or risks this decision creates. Be explicit about known limitations and follow-ups."
+      placeholder: |
+        **Positive**
+        - ...
+
+        **Negative / trade-offs**
+        - ...
+
+        **Follow-ups / known limitations**
+        - ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: governance-impact
+    attributes:
+      label: Governance Impact
+      description: "Which decision domain does this primarily affect? This determines the reviewers and the decision label applied on acceptance."
+      options:
+        - "Product — product-decision"
+        - "Architecture — architecture-decision"
+        - "Governance — governance-decision"
+    validations:
+      required: true
+
+  - type: textarea
+    id: links
+    attributes:
+      label: Links
+      description: "Related issues, prior ADRs, PRs, commits, docs, receipts, or product decisions. Use `Closes #N` to auto-link the issue this decision resolves."
+      placeholder: |
+        - Related issue: #
+        - Supersedes / relates to ADR: docs/adr/...
+        - PR / commit:
+        - Doc / receipt: docs/receipts/... | docs/screenshots/...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: "I understand that, once accepted in review, this decision is recorded as a numbered ADR under `docs/adr/`."
+          required: true
+        - label: "I have stated the context, the options, the proposed decision, and its consequences."
+          required: true
