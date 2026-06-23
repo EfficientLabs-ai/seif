@@ -1,0 +1,101 @@
+name: Bug report
+description: Report a defect so it can be triaged, proven, and fixed under the Efficient Labs operating standard.
+title: "bug: "
+labels: ["bug", "needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug against **EfficientLabs-ai/seif**.
+
+        A bug is not actionable until it is **reproducible** and backed by **proof/receipts** (logs, screenshots, CLI output). Please be concrete: clean titles, linked context, and visible evidence keep `main` protected and the repo operating like a system.
+
+        - Search existing issues first to avoid duplicates.
+        - Put logs in `docs/receipts/` and screenshots in `docs/screenshots/` when attaching to a PR.
+        - Set **severity** (P0/P1/P2/P3) and **impact** honestly — they drive triage order.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Plain-English description of what is broken, missing, or behaving incorrectly.
+      placeholder: One or two sentences describing the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact, ordered steps that reliably trigger the bug.
+      placeholder: |
+        1. Go to '...'
+        2. Run '...'
+        3. Observe '...'
+    validations:
+      required: true
+  - type: textarea
+    id: expected-vs-actual
+    attributes:
+      label: Expected vs actual
+      description: What you expected to happen, and what actually happened.
+      placeholder: |
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How urgent is this? Drives triage order.
+      options:
+        - P0 — critical / now
+        - P1 — high
+        - P2 — medium
+        - P3 — low
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      description: Who or what is primarily affected by this bug.
+      options:
+        - "impact:user"
+        - "impact:security"
+        - "impact:infra"
+        - "impact:docs"
+        - "impact:revenue"
+    validations:
+      required: true
+  - type: textarea
+    id: proof
+    attributes:
+      label: Proof / Receipts
+      description: Logs, screenshots, or CLI output that demonstrate the bug. Logs live in `docs/receipts/`, screenshots in `docs/screenshots/`.
+      placeholder: |
+        - Logs:
+        - Screenshots:
+        - CLI output:
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, runtime/version, branch or commit, and any relevant configuration.
+      placeholder: |
+        - OS:
+        - Runtime / version:
+        - Branch / commit:
+        - Config / flags:
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I searched existing issues and confirmed this is not a duplicate.
+          required: true
+        - label: I can attach proof/receipts (logs, screenshots, or CLI output).
+          required: true

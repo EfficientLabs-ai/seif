@@ -1,0 +1,40 @@
+# Efficient Labs — GitHub Operating Standard
+# Automatic release-notes configuration for EfficientLabs-ai/seif.
+# GitHub groups merged PRs into the categories below using their labels.
+# Labels map to the canonical label taxonomy (see .github/labels.yml).
+# Docs: https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes
+
+changelog:
+  exclude:
+    labels:
+      - duplicate
+      - wontfix
+      - invalid
+  categories:
+    - title: Features
+      labels:
+        - feat
+        - enhancement
+    - title: Fixes
+      labels:
+        - fix
+        - bug
+    - title: Security
+      labels:
+        - security
+        - impact:security
+    - title: Docs
+      labels:
+        - documentation
+        - docs
+    - title: Infra / CI
+      labels:
+        - ci
+        - chore
+        - impact:infra
+    - title: Architecture
+      labels:
+        - architecture-decision
+    - title: Other Changes
+      labels:
+        - "*"

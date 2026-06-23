@@ -1,0 +1,93 @@
+# Efficient Labs — GitHub Label Taxonomy
+# SOURCE OF TRUTH for repository labels. Consumed by the label-sync step / gh CLI.
+# Edit this file to add/change/remove labels; the sync step reconciles GitHub to match.
+#
+# Existing default labels are RETAINED (not removed) and are not managed here:
+#   bug · enhancement · documentation · question · duplicate ·
+#   help wanted · good first issue · invalid · wontfix · claude-task
+#
+# Each entry: { name, color (hex, no '#'), description }
+
+# --- severity ---
+- name: "P0"
+  color: "b60205"
+  description: "critical/now"
+- name: "P1"
+  color: "d93f0b"
+  description: "high"
+- name: "P2"
+  color: "fbca04"
+  description: "medium"
+- name: "P3"
+  color: "0e8a16"
+  description: "low"
+
+# --- status ---
+- name: "needs-proof"
+  color: "d4c5f9"
+  description: "proof/receipts missing"
+- name: "needs-review"
+  color: "fef2c0"
+  description: "awaiting review"
+- name: "blocked"
+  color: "000000"
+  description: "blocked on a dependency"
+- name: "ready-to-merge"
+  color: "0e8a16"
+  description: "approved + proven"
+
+# --- impact ---
+- name: "impact:user"
+  color: "1d76db"
+  description: "affects end users"
+- name: "impact:security"
+  color: "b60205"
+  description: "affects security"
+- name: "impact:infra"
+  color: "5319e7"
+  description: "affects infrastructure"
+- name: "impact:docs"
+  color: "0075ca"
+  description: "affects documentation"
+- name: "impact:revenue"
+  color: "0e8a16"
+  description: "affects revenue"
+
+# --- agent ---
+- name: "agent:claude"
+  color: "6f42c1"
+  description: "work by Claude"
+- name: "agent:codex"
+  color: "24292e"
+  description: "work by Codex"
+- name: "agent:gemini"
+  color: "1a73e8"
+  description: "work by Gemini"
+- name: "agent:neo"
+  color: "d4af37"
+  description: "work by Neo"
+
+# --- decision ---
+- name: "product-decision"
+  color: "c2e0c6"
+  description: "product decision"
+- name: "architecture-decision"
+  color: "5319e7"
+  description: "architecture decision"
+- name: "governance-decision"
+  color: "b60205"
+  description: "governance decision"
+
+# --- proof ---
+- name: "proof:tests"
+  color: "0e8a16"
+  description: "proof via tests"
+- name: "proof:logs"
+  color: "fbca04"
+  description: "proof via logs"
+- name: "proof:screenshot"
+  color: "1d76db"
+  description: "proof via screenshot"
+- name: "proof:manual-verification"
+  color: "d93f0b"
+  description: "proof via manual verification"

@@ -1,6 +1,13 @@
 # SEIF — GAEO code ownership. neo (founder) holds merge authority on protected branches.
 # Agent identities (GitHub App / machine-users) are added here once provisioned.
-*              @Neo-The-Architect
-/governance/   @Neo-The-Architect
-/kernel/       @Neo-The-Architect
-/schemas/      @Neo-The-Architect
+*                 @Neo-The-Architect
+/governance/      @Neo-The-Architect
+/kernel/          @Neo-The-Architect
+/schemas/         @Neo-The-Architect
+/docs/            @Neo-The-Architect
+/.github/         @Neo-The-Architect
+/logos/           @Neo-The-Architect
+/memory/          @Neo-The-Architect
+CONTRIBUTING.md   @Neo-The-Architect
+BRANCHING.md      @Neo-The-Architect
+CHANGELOG.md      @Neo-The-Architect
