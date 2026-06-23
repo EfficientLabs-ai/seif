@@ -27,6 +27,28 @@ class TestIntegrityGuard(unittest.TestCase):
         d = "diff --git a/src/a.py b/src/a.py\n+++ b/src/a.py\n+ if x=='test_login': pass\n"
         ok, r = IG.is_clean(d, PROTECTED, ["tests/t.py::test_login"]); self.assertTrue(ok); self.assertTrue(r["flags"])
 
+    def test_bypass_sentinel_hard_even_with_empty_protected(self):
+        # a candidate adding .seif-gate-off is trying to switch the gate OFF — ALWAYS rejected, even when
+        # the per-task protected set is empty.
+        d = "diff --git a/.seif-gate-off b/.seif-gate-off\n+++ b/.seif-gate-off\n+disabled\n"
+        ok, r = IG.is_clean(d, [])
+        self.assertFalse(ok)
+        self.assertTrue(any(h["vector"] == "gate_bypass_sentinel" for h in r["hard"]))
+
+    def test_bypass_sentinel_variants(self):
+        # subdir + case variants (normal diff lines)
+        for path in ("sub/dir/.seif-gate-off", ".SEIF-GATE-OFF"):
+            d = f"diff --git a/{path} b/{path}\n+++ b/{path}\n+x\n"
+            ok, r = IG.is_clean(d, PROTECTED)
+            self.assertFalse(ok, f"must reject bypass sentinel: {path}")
+            self.assertTrue(any(h["vector"] == "gate_bypass_sentinel" for h in r["hard"]), path)
+        # real git C-style quoting for a path with a space (quotes wrap the whole token)
+        dq = ('diff --git "a/weird path/.seif-gate-off" "b/weird path/.seif-gate-off"\n'
+              '+++ "b/weird path/.seif-gate-off"\n+x\n')
+        ok, r = IG.is_clean(dq, PROTECTED)
+        self.assertFalse(ok, "must reject quoted bypass sentinel")
+        self.assertTrue(any(h["vector"] == "gate_bypass_sentinel" for h in r["hard"]))
+
 
 if __name__ == "__main__":
     unittest.main()

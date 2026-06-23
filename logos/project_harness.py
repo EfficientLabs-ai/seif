@@ -20,10 +20,12 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "kernel"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     import seif_kernel as K     # noqa: E402
 except Exception:               # noqa: BLE001
     K = None
+import integrity_guard as IG    # noqa: E402  (universal gate-bypass-sentinel check on every accepted patch)
 
 RECEIPTS = os.path.expanduser("~/seif/kernel/ledger/project_receipts.jsonl")
 
@@ -45,6 +47,15 @@ def checkpoint(repo, base="HEAD", link_deps=True):
     14/14 suites "failed" in a bare worktree purely because node_modules was missing.)"""
     wt = tempfile.mkdtemp(prefix="seif-wt-")
     subprocess.run(["git", "-C", repo, "worktree", "add", "--quiet", "--detach", wt, base], check=True)
+    # The clean room is a CONTROLLED, separately-gated environment (its verdict is the project's test suite,
+    # not the interactive Stop hook). Pre-place the Stop-hook bypass so the nested editor sub-agent isn't
+    # blocked here — AND git-exclude it so it can NEVER stage into the candidate patch. (Dogfood: without
+    # this, the sub-agent created .seif-gate-off itself to finish and it leaked into a StratosAgent #1 patch.)
+    try:
+        open(os.path.join(wt, ".seif-gate-off"), "w").write(
+            "seif clean-room: interactive Stop hook bypassed here; the harness test suite is the gate.\n")
+    except OSError:
+        pass
     if link_deps:
         for d in DEP_DIRS:
             src = os.path.join(repo, d)
@@ -64,6 +75,20 @@ def checkpoint(repo, base="HEAD", link_deps=True):
                     f.write("\n# seif: ignore symlinked dependency dirs\n" + "\n".join("/" + d for d in DEP_DIRS) + "\n")
         except Exception:  # noqa: BLE001
             pass
+    # always exclude the gate-bypass sentinel from staging (independent of link_deps)
+    try:
+        excl = subprocess.run(["git", "-C", wt, "rev-parse", "--git-path", "info/exclude"],
+                              capture_output=True, text=True).stdout.strip()
+        if excl:
+            with open(os.path.join(wt, excl) if not os.path.isabs(excl) else excl, "a") as f:
+                f.write("\n# seif: never stage the Stop-hook bypass sentinel (any dir)\n.seif-gate-off\n")
+    # NOTE (scope): this exclude is a soft convenience; the HARD guarantee is integrity_guard's
+    # gate_bypass_sentinel check, run in BOTH seif_run and verify_change, which rejects the file even if it
+    # is force-added. KNOWN GAP (queued): a *global* ~/.claude/.seif-gate-off created as a side-effect tool
+    # action is outside any patch, so the patch-scoped guard can't see it — that needs ledger-level
+    # monitoring (the PostToolUse action ledger), tracked separately.
+    except Exception:  # noqa: BLE001
+        pass
     return wt
 
 
@@ -120,6 +145,15 @@ def verify_change(repo, test_cmd, make_change, task="change", base="HEAD", timeo
         make_change(wt)
         subprocess.run(["git", "-C", wt, "add", "-A"], capture_output=True)
         patch = subprocess.run(["git", "-C", wt, "diff", "--cached"], capture_output=True, text=True).stdout
+        # Universal gate-integrity check (independent of any task protected set): a patch that adds a
+        # gate-bypass sentinel (e.g. .seif-gate-off, even force-added) is REJECTED here too — verify_change
+        # is a second accept path and must not be a hole around seif_run's integrity gate.
+        clean, igrep = IG.is_clean(patch, [])
+        if not clean:
+            discard(repo, wt)
+            return {"accepted": False, "worktree": None, "patch": patch,
+                    "result": {"outcome": "integrity_violation", "exit_code": None}, "integrity": igrep,
+                    "receipt": _receipt(repo, task, test_cmd, {"outcome": "integrity_violation", "exit_code": None}, patch)}
         result = run_tests(wt, test_cmd, timeout=timeout)
         rec = _receipt(repo, task, test_cmd, result, patch)
         if result["outcome"] == "pass":
