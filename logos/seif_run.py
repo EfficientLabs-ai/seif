@@ -41,7 +41,7 @@ def _slug(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:40] or "task"
 
 
-def _claude_edit(worktree, task, feedback, first, timeout):
+def _claude_edit(worktree, task, feedback, first, timeout, model=None):
     if first:
         prompt = (f"You are making a focused change in this repository (cwd).\n\nTASK:\n{task}\n\n"
                   "Edit the SOURCE to accomplish it and make the project's tests pass. Do NOT edit tests. "
@@ -50,14 +50,27 @@ def _claude_edit(worktree, task, feedback, first, timeout):
         prompt = (f"You are fixing a change in this repository (cwd).\n\nTASK:\n{task}\n\n"
                   f"The project's tests are STILL FAILING:\n{feedback[:4500]}\n\n"
                   "Fix the SOURCE so the tests pass. Do NOT edit tests. Make the change and stop.")
-    try:
-        # --output-format json makes the call cost-attributable: the result envelope carries usage + cost.
-        # acceptEdits still applies (edits happen); only the FINAL print is a JSON envelope we meter.
-        p = subprocess.run([CLAUDE, "-p", "--output-format", "json", "--permission-mode", "acceptEdits", prompt],
-                           cwd=worktree, timeout=timeout, capture_output=True, text=True)
-        return p.returncode, UM.parse_usage(p.stdout)
-    except subprocess.TimeoutExpired:
-        return None, UM.parse_usage("")
+    # --output-format json makes the call cost-attributable: the result envelope carries usage + cost.
+    # acceptEdits still applies (edits happen); only the FINAL print is a JSON envelope we meter.
+    # --model pins the model when the caller requests one (so a measured/routed model is honoured).
+    argv = [CLAUDE, "-p", "--output-format", "json", "--permission-mode", "acceptEdits"]
+    if model:
+        argv += ["--model", model]
+    argv.append(prompt)
+    # Retry-on-empty: an empty (zero-token) envelope is an INFRA hiccup, not "the agent made no change".
+    # A genuine no-change still returns non-zero usage (the prompt was processed). Retrying a real no-change
+    # is harmless (still no diff); NOT retrying an empty envelope wastes a whole budget step. Bounded to 3.
+    last = (None, UM.parse_usage(""))
+    for _ in range(3):
+        try:
+            p = subprocess.run(argv, cwd=worktree, timeout=timeout, capture_output=True, text=True)
+        except subprocess.TimeoutExpired:
+            return None, UM.parse_usage("")
+        usage = UM.parse_usage(p.stdout)
+        last = (p.returncode, usage)
+        if UM.total_tokens(usage) > 0:
+            return last
+    return last
 
 
 def _has_remote(repo):
@@ -86,7 +99,8 @@ def _resolve_base(repo, base):
     return commit or "HEAD"
 
 
-def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=True, protected=PROTECTED):
+def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=True, protected=PROTECTED,
+             model=None):
     repo = os.path.abspath(repo)
     base = _resolve_base(repo, base)
     wt = H.checkpoint(repo, base)
@@ -100,7 +114,7 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
 
         for step in range(1, budget + 1):
             integrity = None                          # never carry a prior step's verdict forward
-            rc, usage = _claude_edit(wt, task, feedback, step == 1, timeout)
+            rc, usage = _claude_edit(wt, task, feedback, step == 1, timeout, model=model)
             UM.accumulate(spend, usage)               # meter every model call, pass or fail
             patch = _stage_diff()
             if not patch.strip():
@@ -128,6 +142,12 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                 continue
             feedback = (result.get("stdout", "") + "\n" + result.get("stderr", ""))[-4500:]
         print(f"[/seif] spend: {UM.summary_line(spend)}")
+        # CBOM guard (item 3): the receipt's usage already records the model actually served (model_actual).
+        # If the caller pinned a model and a DIFFERENT one was served (e.g. a setting-strip forced a
+        # downgrade), warn loudly — a silent model swap must never be mistaken for an optimization.
+        model_actual = spend.get("model")
+        if model and model_actual and model_actual.split("[")[0] != model:
+            print(f"[/seif] ⚠️ MODEL MISMATCH: requested {model}, served {model_actual}")
         rec = H._receipt(repo, task, test_cmd, result or {"outcome": "no_change", "exit_code": None},
                          patch, usage=spend)
         if not passed:
@@ -143,7 +163,8 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                 pass
             print(f"[/seif] NOT VERIFIED ({why}) — rolled back. receipt h={rec.get('h')}")
             return {"accepted": False, "receipt": rec, "patch": patch, "reason": why,
-                    "integrity": integrity, "usage": spend}
+                    "integrity": integrity, "usage": spend,
+                    "model_requested": model, "model_actual": spend.get("model")}
         # success: land on a branch (never main), PR if a remote exists
         branch = f"seif/{_slug(task)}-{time.strftime('%m%d-%H%M%S', time.gmtime())}-{os.urandom(2).hex()}"
         # commit the EXACT integrity-checked index (-m, not -am) so the PR contents == what was graded.
@@ -210,7 +231,8 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
         # leave the worktree in place so the founder can inspect; caller/founder removes after merge
         return {"accepted": True, "landed": landed, "branch": branch, "pr": pr_url, "worktree": wt,
                 "receipt": rec, "patch": patch, "reason": "verified", "integrity": integrity,
-                "checkpoint": checkpoint, "usage": spend}
+                "checkpoint": checkpoint, "usage": spend,
+                "model_requested": model, "model_actual": spend.get("model")}
     except Exception:
         H.discard(repo, wt)
         raise
@@ -226,8 +248,10 @@ def main():
                     help="clean-room base ref (default HEAD); 'last-healthy' resolves to the last healthy L4 checkpoint")
     ap.add_argument("--timeout", type=int, default=600)
     ap.add_argument("--no-pr", action="store_true")
+    ap.add_argument("--model", default=None, help="pin the model (e.g. claude-opus-4-8); records + warns on mismatch")
     a = ap.parse_args()
-    r = seif_run(a.repo, a.task, a.test_cmd, budget=a.budget, base=a.base, timeout=a.timeout, make_pr=not a.no_pr)
+    r = seif_run(a.repo, a.task, a.test_cmd, budget=a.budget, base=a.base, timeout=a.timeout,
+                 make_pr=not a.no_pr, model=a.model)
     sys.exit(0 if r["accepted"] else 1)
 
 
