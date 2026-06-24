@@ -13,6 +13,7 @@ branch/PR — never an auto-merge. Every attempt (pass or fail) mints a receipt.
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -98,15 +99,70 @@ def discard(repo, wt):
     shutil.rmtree(wt, ignore_errors=True)
 
 
-def run_tests(wt, test_cmd, timeout=600):
-    """Run the project's own test command in the worktree. GROUND TRUTH = exit code."""
+def _fast_path_cmd(wt, base_cmd, changed_files, select_fmt):
+    """OPT-IN graph-safety fast-path: ask logos/graph_safety for the minimal test subset for `changed_files`
+    and, ONLY if it can answer with a non-empty subset, splice those files into `base_cmd` via `select_fmt`.
+
+    Returns (cmd, selected) where `selected` is the chosen subset, or (None, reason) to signal the caller it
+    MUST run the full `base_cmd` instead. This NEVER narrows testing when the answer is uncertain, and it
+    never raises into run_tests — every failure mode degrades to the full suite:
+      - graph_safety.test_selection returns None  → cannot know → full suite (reason='no_graph').
+      - it returns []                              → no test exercises the change in the graph → full suite
+                                                     (reason='empty'); we do NOT trust 'run nothing'.
+      - `select_fmt` is missing a '{tests}' slot   → cannot build a scoped cmd → full suite (reason='no_fmt').
+      - `select_fmt.format(...)` raises (stray '{'/'}' or unknown field) → full suite (reason='bad_fmt').
+    The selected paths are shlex-quoted before splicing so a path with spaces/shell metacharacters cannot
+    alter command execution under the (pre-existing, founder-configured) shell=True invocation. A returned
+    cmd is the full base_cmd with the quoted subset spliced in; the FULL suite remains the default."""
+    try:
+        import graph_safety as GS  # noqa: E402  (logos/ already on sys.path)
+        selected = GS.test_selection(wt, changed_files)
+    except Exception as e:  # noqa: BLE001 — graph_safety unavailable/unreadable → never block, full suite
+        return None, f"error:{e!r}"
+    if selected is None:
+        return None, "no_graph"      # unknown → full suite
+    if not selected:
+        return None, "empty"         # graph answered 'nothing' → still run the full suite (safety)
+    if "{tests}" not in (select_fmt or ""):
+        return None, "no_fmt"
+    # shlex.quote each path so spaces / shell metacharacters in a graph source_file can't break out of the
+    # command. .format may still raise on a malformed select_fmt (stray brace / unknown field) — catch that
+    # and fall back to the full suite rather than letting run_tests crash.
+    quoted = " ".join(shlex.quote(p) for p in selected)
+    try:
+        return select_fmt.format(tests=quoted), selected
+    except (KeyError, IndexError, ValueError):  # malformed format string → cannot scope → full suite
+        return None, "bad_fmt"
+
+
+def run_tests(wt, test_cmd, timeout=600, fast_path=False, changed_files=None, select_fmt=None):
+    """Run the project's own test command in the worktree. GROUND TRUTH = exit code.
+
+    By DEFAULT runs the FULL `test_cmd` — the full suite is the default and the final gate, unchanged for
+    every existing caller (signature is backward-compatible; the new args all default to off).
+
+    OPTIONAL fast-path (`fast_path=True` AND a `select_fmt` carrying a '{tests}' slot AND `changed_files`):
+    graph_safety selects the minimal test subset for the change and we run THAT scoped command first; if it
+    cannot answer (None / empty) we transparently run the full suite instead. The result carries
+    `fast_path` metadata so a caller can see whether the scoped run was used and on which files — but the
+    fast-path is a convenience, never a replacement for the full-suite gate the driver runs to verify."""
+    cmd, selected = test_cmd, None
+    fp_reason = "disabled"
+    if fast_path:
+        scoped, info = _fast_path_cmd(wt, test_cmd, changed_files, select_fmt)
+        if scoped is not None:
+            cmd, selected, fp_reason = scoped, info, "scoped"
+        else:
+            fp_reason = info  # fell back to the full suite; info says why (no_graph/empty/no_fmt/error:*)
     t0 = time.time()
     try:
-        p = subprocess.run(test_cmd, cwd=wt, shell=True, capture_output=True, text=True, timeout=timeout)
-        return {"exit_code": p.returncode, "outcome": "pass" if p.returncode == 0 else "fail",
-                "seconds": round(time.time() - t0, 1), "stdout": p.stdout[-3000:], "stderr": p.stderr[-2000:]}
+        p = subprocess.run(cmd, cwd=wt, shell=True, capture_output=True, text=True, timeout=timeout)
+        res = {"exit_code": p.returncode, "outcome": "pass" if p.returncode == 0 else "fail",
+               "seconds": round(time.time() - t0, 1), "stdout": p.stdout[-3000:], "stderr": p.stderr[-2000:]}
     except subprocess.TimeoutExpired:
-        return {"exit_code": 124, "outcome": "timeout", "seconds": timeout, "stdout": "", "stderr": "timeout"}
+        res = {"exit_code": 124, "outcome": "timeout", "seconds": timeout, "stdout": "", "stderr": "timeout"}
+    res["fast_path"] = {"used": fp_reason == "scoped", "reason": fp_reason, "selected": selected}
+    return res
 
 
 def _receipt(repo, task, test_cmd, result, patch, usage=None, metering=None):
