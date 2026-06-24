@@ -1,0 +1,48 @@
+# ECP route (efl.route/v1) — bug-fix-class work on SEIF source.
+# Compiled by logos/ecp_route.py into the minimum operating environment for a task.
+# This route encodes the measured policy: cheap default model (Round-3: dynamic routing not yet justified),
+# lean context (drop user CLAUDE.md/skills/hooks), scoped MCP, source-only tools, real-test verification.
+schema: efl.route/v1
+id: seif-source-fix
+version: 1
+match:
+  intents: [fix, debug, modify]
+  paths:
+    - "logos/**/*.py"
+    - "memory/**/*.py"
+    - "kernel/**/*.py"
+context:
+  required:
+    - docs/FINDINGS_TOKEN_ECONOMICS.md
+  selectors:
+    - graph:
+        seeds: "${changed_files}"
+        edges: [imports]
+        max_hops: 2
+  max_fresh_input_tokens: 4000
+tools:
+  allow:
+    - Read
+    - Grep
+    - Glob
+    - Edit
+    - "Bash(python3 -m unittest *)"
+  deny:
+    - "Bash(git push *)"
+    - "Bash(git merge *)"
+  mcp: []                       # no MCP needed for source bug-fixes → full lean (~43% MCP saving)
+memory:
+  working: { backend: redis, ttl_seconds: 3600 }
+  episodic: { backend: jsonl }
+  graph: { backend: graphify }
+  checkpoint: { required_before_mutation: true }
+budget:
+  requested_model: claude-haiku    # default-cheap (Round-3 measured: matches resolution at −86% cost)
+  max_turns: 3
+  max_fresh_input_tokens: 4000
+  max_wall_seconds: 900
+verification:
+  commands:
+    - python3 -m unittest discover -s tests -p "test_*.py"
+  checkpoint_on: [all_mandatory_evidence_green]
+  human_approval: [protected_paths, production_actions]
