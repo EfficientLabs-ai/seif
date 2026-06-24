@@ -165,7 +165,7 @@ def run_tests(wt, test_cmd, timeout=600, fast_path=False, changed_files=None, se
     return res
 
 
-def _receipt(repo, task, test_cmd, result, patch, usage=None):
+def _receipt(repo, task, test_cmd, result, patch, usage=None, metering=None):
     rec = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "actor": "seif-harness", "repo": os.path.basename(repo.rstrip("/")), "task": str(task)[:200],
@@ -177,6 +177,15 @@ def _receipt(repo, task, test_cmd, result, patch, usage=None):
     # Added before the hash so usage is covered by the receipt's integrity chain.
     if usage is not None:
         rec["usage"] = usage
+    # production metering (optional): the A-loop's per-task record fields — attempt_number,
+    # empty_response_retries, checkpoint_id, evidence_result, final_outcome. Merged in BEFORE the hash so
+    # every field is covered by the receipt's integrity chain (a receipt's claim about which attempt/budget
+    # step produced the patch, how many empty-response retries were absorbed, which healthy checkpoint was
+    # minted, and the final disposition is tamper-evident, not after-the-fact narrative). Optional → old
+    # receipts (and callers that pass no metering) keep their exact shape + chain.
+    if metering is not None:
+        for k, v in metering.items():
+            rec[k] = v
     try:
         os.makedirs(os.path.dirname(RECEIPTS), exist_ok=True)
         prev = "0" * 16
