@@ -18,3 +18,20 @@ jobs:
         run: python3 -c "import json,glob; from jsonschema import Draft202012Validator as V; [V.check_schema(json.load(open(f))) for f in glob.glob('schemas/*.json')]; print('schemas valid')"
       - name: kernel selftest + C0 regressions
         run: python3 kernel/selftest.py
+
+  test-suite:
+    name: full unittest suite (real tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: deps
+        run: pip install jsonschema pyyaml
+      - name: discover + run the real test suite (exit code = truth)
+        run: |
+          n=$(find tests -name 'test_*.py' | wc -l)
+          test "$n" -ge 1 || { echo "::error::no test_*.py discovered under tests/ — refusing false-green"; exit 1; }
+          echo "discovered $n test files"
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p "test_*.py"

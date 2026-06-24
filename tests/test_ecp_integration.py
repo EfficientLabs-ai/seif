@@ -66,15 +66,58 @@ class EcpLoopTest(unittest.TestCase):
             SR.seif_run(self.repo, "fix", "true", make_pr=False, route=ROUTE, model="claude-opus-4-8")
         self.assertEqual(cap["model"], "claude-opus-4-8")             # explicit arg wins over route
 
-    def test_no_route_passes_no_extra_flags(self):
+    def test_kill_switch_route_false_passes_no_extra_flags(self):
+        # route=False is the explicit kill-switch — auto-select is bypassed, no flags reach the chokepoint.
         cap = {}
 
         def fake_edit(wt, task, feedback, first, timeout, model=None, extra_flags=None):
             cap["extra_flags"] = extra_flags
             return 0, SR.UM.empty()
         with mock.patch.object(SR, "_claude_edit", side_effect=fake_edit):
-            SR.seif_run(self.repo, "fix", "true", make_pr=False)     # route=None default
-        self.assertIsNone(cap["extra_flags"])                        # zero behavior change
+            SR.seif_run(self.repo, "fix", "true", make_pr=False, route=False)   # kill-switch
+        self.assertIsNone(cap["extra_flags"])                        # disabled → no route applied
+
+    def test_kill_switch_env_var_passes_no_extra_flags(self):
+        # SEIF_NO_ROUTE=1 is the env kill-switch — equivalent to route=False even with route=None (default).
+        cap = {}
+
+        def fake_edit(wt, task, feedback, first, timeout, model=None, extra_flags=None):
+            cap["extra_flags"] = extra_flags
+            return 0, SR.UM.empty()
+        with mock.patch.dict(os.environ, {"SEIF_NO_ROUTE": "1"}):
+            with mock.patch.object(SR, "_claude_edit", side_effect=fake_edit):
+                SR.seif_run(self.repo, "fix", "true", make_pr=False)            # default route=None
+        self.assertIsNone(cap["extra_flags"])                        # env kill-switch wins
+
+    def test_auto_select_default_applies_matching_route(self):
+        # route=None (default) now AUTO-selects: a matching route's lean flags reach the chokepoint without
+        # any opt-in. We pin _load_routes to a controlled set so the test is hermetic + independent of disk.
+        cap = {}
+
+        def fake_edit(wt, task, feedback, first, timeout, model=None, extra_flags=None):
+            cap["model"], cap["extra_flags"] = model, extra_flags
+            return 0, SR.UM.empty()
+        with mock.patch.object(SR, "_load_routes", return_value=[ROUTE]):
+            with mock.patch.object(SR, "_claude_edit", side_effect=fake_edit):
+                # task == "fix" matches ROUTE's match.intents=["fix"] via match_route(intent=task)
+                r = SR.seif_run(self.repo, "fix", "true", make_pr=False)
+        self.assertEqual(cap["model"], "claude-haiku-4-5-20251001")            # routed model auto-applied
+        self.assertIn("--strict-mcp-config", cap["extra_flags"])               # lean flags auto-applied
+        self.assertEqual(r["route_id_selected"], "r-test")                     # selected route recorded
+
+    def test_auto_select_no_match_keeps_default_behavior(self):
+        # route=None + no matching route → current (full) behavior: no flags, route_id_selected='none'.
+        cap = {}
+
+        def fake_edit(wt, task, feedback, first, timeout, model=None, extra_flags=None):
+            cap["extra_flags"] = extra_flags
+            return 0, SR.UM.empty()
+        with mock.patch.object(SR, "_load_routes", return_value=[ROUTE]):
+            with mock.patch.object(SR, "_claude_edit", side_effect=fake_edit):
+                # task "deploy the thing" matches no route's intents → unmatched → default behavior
+                r = SR.seif_run(self.repo, "deploy the thing", "true", make_pr=False)
+        self.assertIsNone(cap["extra_flags"])                        # no route → no behavior change
+        self.assertEqual(r["route_id_selected"], "none")
 
 
 if __name__ == "__main__":
