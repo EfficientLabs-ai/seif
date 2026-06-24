@@ -63,6 +63,49 @@ def _blast_radius(mem, repo, patch):
         return {"changed": [], "impacted": None, "error": repr(e)}
 
 
+def _as_int(v):
+    """Coerce to int, or 0 — instrumentation must never raise out of the meter (a non-numeric/None usage
+    field from a non-hardened runner degrades to 0, it does not crash run_one)."""
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _as_float(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _training_cost(task, result, term):
+    """The per-task TRAINING SIGNAL carried inside the summary's free-form `cost` dict (validate() does not
+    constrain it). One episode per task already exists; this enriches it with the measured fields a training
+    table needs — model requested vs served (CBOM), call count, fresh vs cache-read tokens, USD, the evidence
+    verdict, and the receipt hash. seif_run returns `usage` (a usage_meter spend dict), `model_requested`,
+    `model_actual`, and `receipt` (with `.h`); each field degrades to a typed default if a stage didn't run.
+
+    No-throw by contract: a malformed runner payload (non-dict usage/receipt, non-numeric token fields) must
+    degrade to defaults, never crash the recording of the episode."""
+    usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
+    receipt = result.get("receipt") if isinstance(result.get("receipt"), dict) else {}
+    return {
+        "budget": task.get("budget"),
+        # model accounting (model_actual is the served model — a silent downgrade is visible here)
+        "model_requested": result.get("model_requested"),
+        "model_actual": result.get("model_actual") or usage.get("model"),
+        # work accounting — fresh input tokens kept SEPARATE from near-free cache-read tokens on purpose
+        "attempt_number": _as_int(usage.get("calls")),
+        "fresh_in": _as_int(usage.get("input_tokens")),
+        "cache_read": _as_int(usage.get("cache_read_input_tokens")),
+        "cost_usd": _as_float(usage.get("cost_usd")),
+        # verdict + proof handle
+        "evidence_result": "pass" if result.get("accepted") else "fail",
+        "receipt_hash": receipt.get("h"),
+    }
+
+
 def _summary_for(task, result, blast, latency_s, idx):
     reason = result.get("reason") or ("verified" if result.get("accepted") else "tests")
     term = _TERM.get(reason, "rejected")
@@ -78,7 +121,7 @@ def _summary_for(task, result, blast, latency_s, idx):
         evidence_passed=["project-tests", "integrity-guard"] if accepted else [],
         evidence_failed=([] if accepted else (["integrity-guard"] if reason == "integrity_violation"
                                               else ["project-tests"])),
-        cost={"budget": task.get("budget")}, latency_s=latency_s,
+        cost=_training_cost(task, result, term), latency_s=latency_s,
         reusable_lesson_candidate=(task.get("lesson") or "") if accepted else "",
         prohibited_reuse_reasons=prohibited,
     )
@@ -160,10 +203,11 @@ def run_one(task, mem, cfg, runner=None, idx=0):
     summary = _summary_for(task, result, blast, latency, idx)
     mem.record_attempt(summary)
 
+    receipt = result.get("receipt") if isinstance(result.get("receipt"), dict) else {}
     rec = {"task_id": task["task_id"], "repo": os.path.basename(repo.rstrip("/")),
            "accepted": bool(result.get("accepted")), "reason": result.get("reason"),
            "landed": bool(result.get("landed")), "pr": result.get("pr"),
-           "receipt": (result.get("receipt") or {}).get("h"), "blast_radius": blast,
+           "receipt": receipt.get("h"), "blast_radius": blast,
            "prior_attempts": len(prior), "memory_fed_forward": bool(preface), "latency_s": latency}
     if rec["landed"]:
         _queue_for_founder({**rec, "queued_at": summary and time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

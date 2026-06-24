@@ -191,6 +191,64 @@ class LoopTest(unittest.TestCase):
         self.assertIn("changed", b)
         self.assertIsNone(b["impacted"])
 
+    def test_episode_carries_training_signal(self):
+        # The loop must record ONE episode per task whose cost dict carries the measured training signal
+        # (model requested/served, call count, fresh vs cache-read tokens, USD, evidence verdict, receipt).
+        def measured_runner(repo, prompt, test_cmd, **kw):
+            return {"accepted": True, "reason": "verified", "landed": True, "pr": "http://pr/1",
+                    "receipt": {"h": "rh1"}, "patch": "diff --git a/s.py b/s.py\n+x",
+                    "model_requested": "claude-opus-4-8", "model_actual": "claude-opus-4-8",
+                    "usage": {"calls": 2, "input_tokens": 1200, "cache_read_input_tokens": 8000,
+                              "cost_usd": 0.03, "model": "claude-opus-4-8"}}
+        SL.run_loop([self._task("t_train", "ACCEPT", lesson="scope it")],
+                    mem=self.mem, cfg=SL.LoopConfig(max_tasks=10), runner=measured_runner)
+        eps = self.mem.episodic.query(task_id="t_train")
+        self.assertEqual(len(eps), 1, "exactly one episode per task")
+        c = eps[0]["summary"]["cost"]
+        self.assertEqual(c["model_requested"], "claude-opus-4-8")
+        self.assertEqual(c["model_actual"], "claude-opus-4-8")
+        self.assertEqual(c["attempt_number"], 2)
+        self.assertEqual(c["fresh_in"], 1200)
+        self.assertEqual(c["cache_read"], 8000)
+        self.assertAlmostEqual(c["cost_usd"], 0.03)
+        self.assertEqual(c["evidence_result"], "pass")
+        self.assertEqual(c["receipt_hash"], "rh1")
+
+    def test_episode_training_signal_degrades_without_usage(self):
+        # A runner that returns no usage/model fields (the existing fake_runner shape) must still record a
+        # valid episode with typed defaults — instrumentation absence never breaks recording.
+        SL.run_loop([self._task("t_min", "FAIL")],
+                    mem=self.mem, cfg=SL.LoopConfig(max_tasks=10), runner=fake_runner)
+        c = self.mem.episodic.query(task_id="t_min")[0]["summary"]["cost"]
+        self.assertEqual(c["fresh_in"], 0)
+        self.assertEqual(c["cache_read"], 0)
+        self.assertEqual(c["attempt_number"], 0)
+        self.assertEqual(c["cost_usd"], 0.0)
+        self.assertEqual(c["evidence_result"], "fail")
+        self.assertEqual(c["receipt_hash"], "ghi")  # receipt still threaded through
+        self.assertIsNone(c["model_requested"])
+
+    def test_episode_recording_survives_malformed_runner_payload(self):
+        # A misbehaving runner returns junk for usage/receipt (wrong types, non-numeric tokens). The loop
+        # must still RECORD a valid episode with degraded defaults — instrumentation never crashes the run.
+        def junk_runner(repo, prompt, test_cmd, **kw):
+            return {"accepted": False, "reason": "tests", "patch": "",
+                    "usage": {"calls": "two", "input_tokens": None, "cache_read_input_tokens": [1],
+                              "cost_usd": "free"},
+                    "receipt": "not-a-dict", "model_actual": "claude-sonnet-4-5"}
+        r = SL.run_loop([self._task("t_junk", "FAIL")],
+                        mem=self.mem, cfg=SL.LoopConfig(max_tasks=10), runner=junk_runner)
+        self.assertEqual(r["attempted"], 1)  # did not crash the cycle
+        c = self.mem.episodic.query(task_id="t_junk")[0]["summary"]["cost"]
+        self.assertEqual(c["attempt_number"], 0)
+        self.assertEqual(c["fresh_in"], 0)
+        self.assertEqual(c["cache_read"], 0)
+        self.assertEqual(c["cost_usd"], 0.0)
+        self.assertIsNone(c["receipt_hash"])              # non-dict receipt → None, not a crash
+        self.assertEqual(c["model_actual"], "claude-sonnet-4-5")
+        # the recorded summary is still valid per trajectory_summary.validate
+        self.assertTrue(TS.validate(self.mem.episodic.query(task_id="t_junk")[0]["summary"]))
+
 
 if __name__ == "__main__":
     unittest.main()

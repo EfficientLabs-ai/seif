@@ -1,0 +1,4 @@
+# Runtime Context Bill of Materials outputs (written by integrations/claude/hooks/cbom_hook.py).
+# Keep the directory tracked, but never commit generated session CBOMs.
+*.json
+!.gitignore

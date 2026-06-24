@@ -46,6 +46,32 @@ def _resolve_commit(repo, ref):
     except Exception:  # noqa: BLE001
         return ref
 
+
+# ECP route manifests live alongside the SEIF source (sibling of logos/), NOT in the target repo: these are
+# SEIF's own per-task policies. Auto-select loads every *.yaml here and asks match_route for the best fit.
+ROUTES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "01_routes")
+
+
+def _load_routes(routes_dir=ROUTES_DIR):
+    """Load + structurally-validate every route manifest in `routes_dir`. Best-effort and no-throw: a
+    missing dir, unreadable file, or invalid manifest is skipped (auto-select must never break the gate —
+    a bad route file degrades to 'no route matched', i.e. current behavior). Returns a list of route dicts."""
+    routes = []
+    try:
+        names = sorted(os.listdir(routes_dir))
+    except OSError:
+        return routes
+    for name in names:
+        if not (name.endswith(".yaml") or name.endswith(".yml")):
+            continue
+        try:
+            r = ECP.load_route(os.path.join(routes_dir, name))
+            if isinstance(r, dict) and not ECP.validate_route(r):   # only well-formed routes are eligible
+                routes.append(r)
+        except Exception:  # noqa: BLE001 — a broken/unloadable manifest is skipped, never fatal
+            continue
+    return routes
+
 # Protected surface for PROJECT-mode reward-hacking defense: a candidate must never make tests "pass"
 # by editing the tests, the CI, or the test runner itself. Source-only fixes. (Callers can override for
 # a task that legitimately adds tests — but the autonomous default protects the grader.)
@@ -62,14 +88,117 @@ def _slug(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:40] or "task"
 
 
+# A failing test prints file paths in a handful of shapes; pull the source files it actually named so we
+# can scope the retry context to the real blast radius. Conservative on purpose — only paths that LOOK
+# like project source (have a code extension) are treated as seeds; noise becomes "no packet", never a crash.
+_SRC_EXT = (".py", ".js", ".ts", ".tsx", ".jsx", ".mjs", ".go", ".rs", ".java", ".rb", ".c", ".cc",
+            ".cpp", ".h", ".hpp", ".cs", ".php", ".swift", ".kt", ".scala")
+# `File "x/y.py", line N` (Python tracebacks) · `at x/y.ts:12:3` (node) · bare `pkg/mod.py:42` (pytest/grep).
+_FILE_PATTERNS = (
+    re.compile(r'File "([^"]+)"'),
+    re.compile(r'\bat\s+([^\s():]+\.[A-Za-z]+):\d+'),
+    re.compile(r'([A-Za-z0-9_./\-]+\.[A-Za-z]+):\d+'),
+)
+
+
+# A path is allowed into the packet only if it matches a strict file-path shape (no spaces, no newlines, no
+# shell/prompt-control punctuation). The packet text is built from two UNTRUSTED sources — failing-test
+# output AND graph `source_file` strings (graphify-out/graph.json can carry arbitrary text) — so every path,
+# whatever its origin, passes this whitelist before it is formatted into the prompt. Anything that doesn't
+# look like a plain relative path is dropped rather than escaped, so a tampered graph can't smuggle directives.
+_SAFE_PATH = re.compile(r"[A-Za-z0-9_./\-]{1,200}\Z")
+
+
+def _safe_paths(paths):
+    """Keep only whitelist-clean relative paths, de-duped in first-seen order (defense for graph-derived
+    strings injected into the retry prompt)."""
+    seen, out = set(), []
+    for p in (paths or []):
+        p = (str(p) if p is not None else "").strip()
+        if p and _SAFE_PATH.match(p) and p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def _referenced_files(feedback):
+    """Source files named in failing-test output, de-duped in first-seen order. Pure + total: any input
+    (incl. None / garbage) yields a list, never an exception — so the retry packet is always safe to build."""
+    seen, out = set(), []
+    text = feedback or ""
+    for pat in _FILE_PATTERNS:
+        for m in pat.findall(text):
+            path = (m or "").strip().lstrip("./")
+            if not path or not path.lower().endswith(_SRC_EXT):
+                continue
+            if not _SAFE_PATH.match(path):       # reject anything that isn't a plain relative path
+                continue
+            if path not in seen:
+                seen.add(path)
+                out.append(path)
+    return out
+
+
+def _retry_context_packet(repo, feedback):
+    """Graph-scoped retry context for attempt N+1: the blast-radius NEIGHBORS of the files the failing
+    tests named — what DEPENDS ON them (L3 reverse closure via delta_plan._blast_radius) and what they
+    DEPEND ON (forward closure via SemanticMemory.dependencies). Returns a short text block, or "" when
+    there is nothing to add. REGRESSION-SAFETY context, not a token saver (graph scoping measured ~0% on
+    tokens). Degrades cleanly: absent graphify-out / store / module ⇒ "" with no error, never a crash."""
+    try:
+        seeds = _referenced_files(feedback)
+        if not seeds:
+            return ""
+        import delta_plan as DP  # noqa: E402  (logos/ already on sys.path)
+        # reverse closure (what changing these touches) — None means "no graph to answer from".
+        impacted = DP._blast_radius(repo, seeds)
+        # forward closure (what these depend on) — via the same L3 view delta_plan composes over.
+        depends_on = None
+        try:
+            from tripartite import SemanticMemory  # noqa: E402  (memory/ on sys.path via delta_plan import)
+            sm = SemanticMemory(repo)
+            if sm.available:
+                deps = set()
+                for s in seeds:
+                    deps.update(sm.dependencies(s))
+                depends_on = sorted(deps) if sm.available else None
+        except Exception:  # noqa: BLE001 — forward closure is advisory; absence ⇒ omit, never crash
+            depends_on = None
+        # Sanitize every graph-derived path before it reaches the prompt: graph `source_file` strings are an
+        # UNTRUSTED source, so whitelist-filter them (a tampered graph can't smuggle prompt directives).
+        impacted = _safe_paths(impacted)
+        depends_on = _safe_paths(depends_on)
+        # If the graph could answer NEITHER direction, there is no graph-scoped value to add → no packet.
+        if not impacted and not depends_on:
+            return ""
+        lines = ["GRAPH-SCOPED CONTEXT (blast radius of the files the failing tests named — reference data,",
+                 "regression-safety only): when you fix the source, check you do not break these neighbors.",
+                 f"  failing-test files: {', '.join(seeds[:12])}"]
+        if impacted:
+            lines.append(f"  depend on the above (could regress): {', '.join(impacted[:20])}")
+        if depends_on:
+            lines.append(f"  the above depend on: {', '.join(depends_on[:20])}")
+        return "\n".join(lines)
+    except Exception:  # noqa: BLE001 — context is advisory; ANY failure ⇒ no packet, never break the gate
+        return ""
+
+
 def _claude_edit(worktree, task, feedback, first, timeout, model=None, extra_flags=None):
+    """Run the editor sub-agent once (with bounded empty-envelope retries).
+
+    Returns (rc, usage). usage carries an extra metering key, `empty_retries` = how many zero-token
+    envelopes were observed and retried past before this (accepted/final) call. A non-zero count is an
+    INFRA-hiccup fingerprint the receipt records, so a 'no_change'/timeout is not silently confused with a
+    flaky empty response. The 2-tuple contract is unchanged — empty_retries rides on the usage dict."""
     if first:
         prompt = (f"You are making a focused change in this repository (cwd).\n\nTASK:\n{task}\n\n"
                   "Edit the SOURCE to accomplish it and make the project's tests pass. Do NOT edit tests. "
                   "Make the change and stop.")
     else:
+        # `feedback` is already bounded by the caller (seif_run truncates test output and appends an
+        # optional graph-scoped packet), so embed it whole here rather than re-truncating it.
         prompt = (f"You are fixing a change in this repository (cwd).\n\nTASK:\n{task}\n\n"
-                  f"The project's tests are STILL FAILING:\n{feedback[:4500]}\n\n"
+                  f"The project's tests are STILL FAILING:\n{feedback}\n\n"
                   "Fix the SOURCE so the tests pass. Do NOT edit tests. Make the change and stop.")
     # --output-format json makes the call cost-attributable: the result envelope carries usage + cost.
     # acceptEdits still applies (edits happen); only the FINAL print is a JSON envelope we meter.
@@ -85,17 +214,24 @@ def _claude_edit(worktree, task, feedback, first, timeout, model=None, extra_fla
     # Retry-on-empty: an empty (zero-token) envelope is an INFRA hiccup, not "the agent made no change".
     # A genuine no-change still returns non-zero usage (the prompt was processed). Retrying a real no-change
     # is harmless (still no diff); NOT retrying an empty envelope wastes a whole budget step. Bounded to 3.
-    last = (None, UM.parse_usage(""))
+    def _tag(rc, usage, retries):
+        usage["empty_retries"] = retries          # metering: zero-token retries observed for this call
+        return rc, usage
+    last_usage = UM.parse_usage("")
+    empty_retries = 0
     for _ in range(3):
         try:
             p = subprocess.run(argv, cwd=worktree, timeout=timeout, capture_output=True, text=True)
         except subprocess.TimeoutExpired:
-            return None, UM.parse_usage("")
+            return _tag(None, UM.parse_usage(""), empty_retries)
         usage = UM.parse_usage(p.stdout)
-        last = (p.returncode, usage)
+        last_usage = usage
         if UM.total_tokens(usage) > 0:
-            return last
-    return last
+            return _tag(p.returncode, usage, empty_retries)        # accepted call; retries seen so far
+        empty_retries += 1          # this call returned zero tokens — the next loop iteration is a retry
+        last_rc = p.returncode
+    # all bounded attempts were empty: report retries = attempts-after-the-first (i.e. empty_retries - 1).
+    return _tag(last_rc, last_usage, max(empty_retries - 1, 0))
 
 
 def _has_remote(repo):
@@ -128,22 +264,59 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
              model=None, route=None, result_cache=None):
     repo = os.path.abspath(repo)
     base = _resolve_base(repo, base)
-    # ECP (opt-in): if a route is given (a compiled dict or a manifest path), compile it into the per-task
-    # minimum operating environment — lean flags + routed model + turn budget. route=None → unchanged behavior.
+    # ECP route selection. Three modes, in order of precedence:
+    #   kill-switch   route=False, or env SEIF_NO_ROUTE=1  -> no route (route_id_selected='none').
+    #   explicit      route=<dict|path>                    -> compile + apply exactly that route (opt-in).
+    #   AUTO (default) route=None                          -> load 01_routes/*.yaml, match_route(intent=task);
+    #                                                         on a hit compile + apply; on a miss, current behavior.
+    # When a route is applied it sets: lean flags (the per-task minimum operating environment), the routed
+    # model (an explicit `model` arg still wins), and the turn budget — identical for explicit + auto routes,
+    # so compile_route's measured constraint (cheap default -> full lean; pinned strong -> mcp-only + warning)
+    # is honored either way.
     lean_flags = None
-    if route is not None:
+    route_id_selected = "none"
+    # Graph-scoped retry context (regression-safety, NOT a token saver — graph scoping measured ~0% on
+    # tokens). DEFAULT ON; when a route IS active it is gated behind the route's memory policy (set below).
+    graph_scope = True
+    disabled = (route is False) or (os.environ.get("SEIF_NO_ROUTE") == "1")
+    route_to_compile = None
+    if disabled:
+        print("[/seif] ECP route selection DISABLED (kill-switch: route=False or SEIF_NO_ROUTE=1)")
+    elif route is not None:
+        # explicit route: a pre-compiled dict, a manifest dict, or a manifest path.
+        route_to_compile = route
+    else:
+        # AUTO-select (the default): pick the best-fit manifest for this task's intent.
+        routes = _load_routes()
+        match = ECP.match_route(routes, intent=task)
+        if match:
+            route_to_compile = match
+            print(f"[/seif] ECP auto-select MATCHED route={match.get('id')} for intent")
+        else:
+            print("[/seif] ECP auto-select: no route matched — default (full) behavior")
+    if route_to_compile is not None:
         # at task start nothing has changed yet, so the graph-selector context is empty; the route's
         # `required` context + the lean flags + routed model are what apply here (graph-scoped context on
         # retries is a follow-up). Accept a pre-compiled dict or a manifest dict/path.
-        compiled = route if isinstance(route, dict) and "lean_flags" in route else ECP.compile_route(
-            route if isinstance(route, dict) else ECP.load_route(route), changed_files=None)
+        compiled = (route_to_compile
+                    if isinstance(route_to_compile, dict) and "lean_flags" in route_to_compile
+                    else ECP.compile_route(
+                        route_to_compile if isinstance(route_to_compile, dict)
+                        else ECP.load_route(route_to_compile), changed_files=None))
         lean_flags = compiled.get("lean_flags")
+        route_id_selected = compiled.get("route_id") or "none"
         model = model or compiled.get("model")          # explicit model arg still wins
         rb = (compiled.get("budget") or {}).get("max_turns")
         if rb:
             budget = rb
+        # Gate graph-scoped retry context behind the route's memory policy: a route that does NOT declare a
+        # graph memory backend (or sets it falsy/disabled) opts OUT of the L3 packet. memory.graph present
+        # and not explicitly disabled ⇒ keep it on.
+        mem_pol = compiled.get("memory") if isinstance(compiled.get("memory"), dict) else {}
+        graph_pol = mem_pol.get("graph")
+        graph_scope = bool(graph_pol) and not (isinstance(graph_pol, dict) and graph_pol.get("enabled") is False)
         print(f"[/seif] ECP route={compiled.get('route_id')} lean={compiled.get('lean')} model={model} "
-              f"flags={' '.join(lean_flags or [])}")
+              f"graph_scope={graph_scope} flags={' '.join(lean_flags or [])}")
         for w in compiled.get("warnings") or []:
             print(f"[/seif] ECP ⚠️ {w}")
     # OPT-IN result cache (off by default). The fingerprint pins the EXACT inputs that determine the
@@ -181,6 +354,10 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
     wt = H.checkpoint(repo, base)
     feedback, passed, result, patch, integrity = "", False, None, "", None
     spend = UM.empty()   # token + cost accounting, summed across every attempt of this task
+    # production metering (A-loop): attempt_number = the budget step that produced the accepted (or last)
+    # patch; empty_response_retries = total zero-token retries absorbed across all steps (an infra-hiccup
+    # fingerprint, summed because each step's _claude_edit reports its own retries on the usage dict).
+    attempt_number, empty_response_retries = 0, 0
     print(f"[/seif] repo={os.path.basename(repo)} test='{test_cmd}' budget={budget}\n[/seif] clean room: {wt}")
     try:
         def _stage_diff():
@@ -189,7 +366,9 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
 
         for step in range(1, budget + 1):
             integrity = None                          # never carry a prior step's verdict forward
+            attempt_number = step                     # track the budget step we are on (accepted patch's step)
             rc, usage = _claude_edit(wt, task, feedback, step == 1, timeout, model=model, extra_flags=lean_flags)
+            empty_response_retries += int(usage.get("empty_retries", 0) or 0)  # zero-token retries this step
             UM.accumulate(spend, usage)               # meter every model call, pass or fail
             patch = _stage_diff()
             if not patch.strip():
@@ -216,6 +395,13 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                             "tests or test config. Make the source change that passes the EXISTING tests.")
                 continue
             feedback = (result.get("stdout", "") + "\n" + result.get("stderr", ""))[-4500:]
+            # Graph-scoped retry context: append the blast-radius neighbors of the files THESE tests named
+            # so the next attempt sees its regression surface. Gated by the route's memory policy (default
+            # ON without a route); degrades to "" — no packet, no crash — when the graph/store is absent.
+            if graph_scope:
+                packet = _retry_context_packet(repo, feedback)
+                if packet:
+                    feedback = feedback + "\n\n" + packet
         print(f"[/seif] spend: {UM.summary_line(spend)}")
         # CBOM guard (item 3): the receipt's usage already records the model actually served (model_actual).
         # If the caller pinned a model and a DIFFERENT one was served (e.g. a setting-strip forced a
@@ -223,12 +409,32 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
         model_actual = spend.get("model")
         if model and model_actual and model_actual.split("[")[0] != model:
             print(f"[/seif] ⚠️ MODEL MISMATCH: requested {model}, served {model_actual}")
-        rec = H._receipt(repo, task, test_cmd, result or {"outcome": "no_change", "exit_code": None},
-                         patch, usage=spend)
+        # production metering shared by both paths. evidence_result is a short, human-scannable verdict:
+        # tests outcome + the integrity/protected-path status the gate actually observed.
+        def _evidence_result(_result, _integrity, _passed):
+            outcome = (_result or {}).get("outcome", "no_change")
+            if _passed:
+                return f"tests pass (exit 0); integrity clean; protected paths untouched"
+            if outcome == "integrity_violation":
+                viol = [h.get("file") for h in (_integrity or {}).get("hard", [])]
+                return f"tests pass BUT integrity FAIL; protected paths edited: {viol}"
+            if outcome == "no_change":
+                return "no patch produced (agent made no change)"
+            ec = (_result or {}).get("exit_code")
+            return f"tests {outcome} (exit {ec}); integrity n/a"
         if not passed:
-            H.discard(repo, wt)                                   # ATMS rollback — main untouched
+            # final disposition: an integrity violation / failing tests with budget remaining is a REJECT;
+            # a clean fail that consumed the whole budget is BUDGET_EXHAUSTED (a distinct, actionable class).
             why = {"integrity_violation": "integrity_violation",
                    "no_change": "no_change"}.get((result or {}).get("outcome"), "tests")
+            final_outcome = ("BUDGET_EXHAUSTED" if why == "tests" and attempt_number >= budget else "REJECTED")
+            metering = {"attempt_number": attempt_number, "empty_response_retries": empty_response_retries,
+                        "checkpoint_id": None, "route_id_selected": route_id_selected,
+                        "evidence_result": _evidence_result(result, integrity, False),
+                        "final_outcome": final_outcome}
+            rec = H._receipt(repo, task, test_cmd, result or {"outcome": "no_change", "exit_code": None},
+                             patch, usage=spend, metering=metering)
+            H.discard(repo, wt)                                   # ATMS rollback — main untouched
             # ASRS forensics: record what broke + the rollback target (last healthy checkpoint), so the
             # loop can avoid repeating the failure class. Best-effort — never alters the gate's verdict.
             try:
@@ -236,17 +442,19 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                                   affected_modules=IG.changed_files(patch or ""), triggered_by=task[:200])
             except Exception:  # noqa: BLE001
                 pass
-            print(f"[/seif] NOT VERIFIED ({why}) — rolled back. receipt h={rec.get('h')}")
+            print(f"[/seif] NOT VERIFIED ({why}/{final_outcome}) — rolled back. receipt h={rec.get('h')}")
             return {"accepted": False, "receipt": rec, "patch": patch, "reason": why,
-                    "integrity": integrity, "usage": spend,
+                    "integrity": integrity, "usage": spend, "route_id_selected": route_id_selected,
                     "model_requested": model, "model_actual": spend.get("model")}
         # success: land on a branch (never main), PR if a remote exists
         branch = f"seif/{_slug(task)}-{time.strftime('%m%d-%H%M%S', time.gmtime())}-{os.urandom(2).hex()}"
         # commit the EXACT integrity-checked index (-m, not -am) so the PR contents == what was graded.
         # conventional-commits message via the house-style builder — same shape as the PR + manual commits.
+        # (The receipt is minted AFTER the checkpoint below so its hash can cover checkpoint_id; the commit
+        # message references the patch sha, not the receipt hash, to keep that ordering one-directional.)
         commit_msg = PF.build_commit(
             "feat", task[:72], scope="seif",
-            bullets=[f"tests pass (exit 0); SEIF receipt {rec.get('h')}"],
+            bullets=[f"tests pass (exit 0); SEIF patch {H._sha(patch)}"],
             trailers=["Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"])
         for c in (["git", "-C", wt, "checkout", "-q", "-b", branch],
                   ["git", "-C", wt, "-c", "user.name=Neo The Architect",
@@ -259,14 +467,26 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
         try:
             commit = subprocess.run(["git", "-C", wt, "rev-parse", "HEAD"],
                                     capture_output=True, text=True).stdout.strip()
+            # proof.receipt is CP's required verified-state evidence hash; we use the graded patch sha (a
+            # stable, non-empty hash of EXACTLY what was tested) so the checkpoint can be minted BEFORE the
+            # receipt — letting the receipt's hash then cover this checkpoint's id (one-directional link).
             checkpoint = CP.create(
                 repo, task[:80], commit=commit,
-                proof={"outcome": "pass", "receipt": rec.get("h"), "test_cmd": test_cmd,
+                proof={"outcome": "pass", "receipt": H._sha(patch), "test_cmd": test_cmd,
                        "exit_code": (result or {}).get("exit_code")},
                 context={"task": task, "files_changed": IG.changed_files(patch or "")},
                 parent=(CP.last_healthy(repo) or {}).get("id"))
         except Exception:  # noqa: BLE001
             checkpoint = None
+        # mint the receipt now that the healthy checkpoint exists, so checkpoint_id is hash-covered.
+        # final_outcome=ACCEPTED_PR: the gate accepted + committed + checkpointed; the PR submission below
+        # is best-effort and does not change the accepted disposition (landed is reported separately).
+        metering = {"attempt_number": attempt_number, "empty_response_retries": empty_response_retries,
+                    "checkpoint_id": (checkpoint or {}).get("id"), "route_id_selected": route_id_selected,
+                    "evidence_result": _evidence_result(result, integrity, True),
+                    "final_outcome": "ACCEPTED_PR"}
+        rec = H._receipt(repo, task, test_cmd, result or {"outcome": "no_change", "exit_code": None},
+                         patch, usage=spend, metering=metering)
         # OPT-IN result cache: store this VERIFIED result under its exact fingerprint so an IDENTICAL re-run
         # (same task/base/test/files/model/flags) reuses this patch + receipt and skips the model. Best-effort
         # and ISOLATED — a cache write must NEVER reach the outer discard or alter the verified landing.
@@ -315,9 +535,21 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
         # leave the worktree in place so the founder can inspect; caller/founder removes after merge
         return {"accepted": True, "landed": landed, "branch": branch, "pr": pr_url, "worktree": wt,
                 "receipt": rec, "patch": patch, "reason": "verified", "integrity": integrity,
-                "checkpoint": checkpoint, "usage": spend,
+                "checkpoint": checkpoint, "usage": spend, "route_id_selected": route_id_selected,
                 "model_requested": model, "model_actual": spend.get("model")}
-    except Exception:
+    except Exception as e:  # noqa: BLE001
+        # final_outcome=ERROR: an unexpected fault (not a clean test/integrity verdict). Mint a best-effort
+        # receipt so the failure is RECORDED (tamper-evident, with the metering captured so far) before we
+        # roll back and re-raise — the ERROR disposition must never be a silent gap in the receipt chain.
+        try:
+            H._receipt(repo, task, test_cmd, {"outcome": "error", "exit_code": None}, patch, usage=spend,
+                       metering={"attempt_number": attempt_number,
+                                 "empty_response_retries": empty_response_retries, "checkpoint_id": None,
+                                 "route_id_selected": route_id_selected,
+                                 "evidence_result": f"unexpected error: {type(e).__name__}: {str(e)[:200]}",
+                                 "final_outcome": "ERROR"})
+        except Exception:  # noqa: BLE001 — receipt bookkeeping must never mask the original fault
+            pass
         H.discard(repo, wt)
         raise
 
@@ -335,9 +567,13 @@ def main():
     ap.add_argument("--model", default=None, help="pin the model (e.g. claude-opus-4-8); records + warns on mismatch")
     ap.add_argument("--result-cache", action="store_true",
                     help="opt-in: reuse a prior accepted patch+receipt on an EXACT fingerprint match (skips the model)")
+    ap.add_argument("--no-route", action="store_true",
+                    help="disable ECP route auto-select (kill-switch; same as SEIF_NO_ROUTE=1)")
     a = ap.parse_args()
+    # auto-select is the default (route=None). --no-route flips the kill-switch (route=False).
     r = seif_run(a.repo, a.task, a.test_cmd, budget=a.budget, base=a.base, timeout=a.timeout,
-                 make_pr=not a.no_pr, model=a.model, result_cache=(True if a.result_cache else None))
+                 make_pr=not a.no_pr, model=a.model, route=False if a.no_route else None,
+                 result_cache=(True if a.result_cache else None))
     sys.exit(0 if r["accepted"] else 1)
 
 
