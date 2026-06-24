@@ -26,6 +26,26 @@ import ecp_route as ECP       # noqa: E402  (ECP route compiler — opt-in per-t
 
 CLAUDE = "/home/neo/.local/bin/claude"
 
+# OPT-IN exact-fingerprint result cache (logos/result_cache.py). OFF by default; enabled per-call via the
+# `result_cache=` param or the SEIF_RESULT_CACHE env var (truthy). A HIT reuses a prior accepted patch +
+# receipt and SKIPS the model call entirely. The cache is imported lazily so the default path never touches
+# it (and never requires the L1 backend). EXACT-only: any field mismatch is a MISS (no fuzzy reuse).
+def _result_cache_enabled(flag):
+    if flag is not None:
+        return bool(flag)
+    return os.environ.get("SEIF_RESULT_CACHE", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _resolve_commit(repo, ref):
+    """Resolve a git ref to a full commit SHA (the cache pins the EXACT base contents, not a moving ref
+    like 'HEAD'). Returns the resolved SHA, or the original ref if resolution fails (degrade, never crash)."""
+    try:
+        out = subprocess.run(["git", "-C", repo, "rev-parse", ref],
+                             capture_output=True, text=True).stdout.strip()
+        return out or ref
+    except Exception:  # noqa: BLE001
+        return ref
+
 # Protected surface for PROJECT-mode reward-hacking defense: a candidate must never make tests "pass"
 # by editing the tests, the CI, or the test runner itself. Source-only fixes. (Callers can override for
 # a task that legitimately adds tests — but the autonomous default protects the grader.)
@@ -105,7 +125,7 @@ def _resolve_base(repo, base):
 
 
 def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=True, protected=PROTECTED,
-             model=None, route=None):
+             model=None, route=None, result_cache=None):
     repo = os.path.abspath(repo)
     base = _resolve_base(repo, base)
     # ECP (opt-in): if a route is given (a compiled dict or a manifest path), compile it into the per-task
@@ -126,6 +146,38 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
               f"flags={' '.join(lean_flags or [])}")
         for w in compiled.get("warnings") or []:
             print(f"[/seif] ECP ⚠️ {w}")
+    # OPT-IN result cache (off by default). The fingerprint pins the EXACT inputs that determine the
+    # model's output: task, the RESOLVED base commit (not a moving ref), test_cmd, the sorted content
+    # hashes of the changed files (empty at task start — base_commit already pins the starting tree),
+    # the model, and the lean flags. A hit lets us reuse a prior accepted patch + receipt and SKIP the
+    # model entirely. Built lazily so the default path never imports the cache or its L1 backend.
+    rcache, cache_fp = None, None
+    if _result_cache_enabled(result_cache):
+        try:
+            import result_cache as RC  # noqa: E402
+            rcache = result_cache if isinstance(result_cache, RC.ResultCache) else RC.ResultCache()
+            base_commit = _resolve_commit(repo, base)
+            # No files have changed yet at the cache-check point; the base commit pins the starting tree,
+            # so the changed-file set is empty here by construction (exact + conservative).
+            changed_hashes = RC.changed_file_hashes(repo, [])
+            cache_fp = (task, base_commit, test_cmd, changed_hashes, model, lean_flags)
+            hit = rcache.lookup(*cache_fp)
+            if hit is not None:
+                print(f"[/seif] RESULT-CACHE HIT (backend={rcache.backend}) — reusing prior accepted patch "
+                      f"+ receipt; SKIP model call. receipt h={(hit.get('receipt') or {}).get('h')}")
+                # `checkpoint` stays None on a cache hit (no NEW checkpoint is minted here) so the return
+                # shape is consistent with the verified path's dict-or-None contract — never a bare string.
+                # The prior run's checkpoint id is surfaced separately as `checkpoint_id` for provenance.
+                return {"accepted": True, "landed": False, "branch": hit.get("branch"),
+                        "pr": None, "worktree": None, "receipt": hit.get("receipt"),
+                        "patch": hit.get("patch"), "reason": "cache_hit", "integrity": None,
+                        "checkpoint": None, "checkpoint_id": hit.get("checkpoint_id"),
+                        "usage": UM.empty(), "model_requested": model, "model_actual": None,
+                        "cache_hit": True}
+            print(f"[/seif] result-cache MISS (backend={rcache.backend}) — running model")
+        except Exception as e:  # noqa: BLE001 — a cache hiccup must NEVER block the gate; degrade to no-cache
+            sys.stderr.write(f"[/seif] result-cache disabled (error: {e!r})\n")
+            rcache, cache_fp = None, None
     wt = H.checkpoint(repo, base)
     feedback, passed, result, patch, integrity = "", False, None, "", None
     spend = UM.empty()   # token + cost accounting, summed across every attempt of this task
@@ -215,6 +267,15 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                 parent=(CP.last_healthy(repo) or {}).get("id"))
         except Exception:  # noqa: BLE001
             checkpoint = None
+        # OPT-IN result cache: store this VERIFIED result under its exact fingerprint so an IDENTICAL re-run
+        # (same task/base/test/files/model/flags) reuses this patch + receipt and skips the model. Best-effort
+        # and ISOLATED — a cache write must NEVER reach the outer discard or alter the verified landing.
+        if rcache is not None and cache_fp is not None:
+            try:
+                rcache.store(*cache_fp, patch=patch, receipt=rec,
+                             extra={"branch": branch, "checkpoint_id": (checkpoint or {}).get("id")})
+            except Exception as e:  # noqa: BLE001
+                sys.stderr.write(f"[/seif] result-cache store skipped (error: {e!r})\n")
         # honest landing state: 'accepted' = tests passed (true regardless); 'landed' = push+PR actually succeeded.
         # PR SUBMISSION IS BEST-EFFORT and ISOLATED: the work is already verified + committed + receipted +
         # checkpointed above, so a push/format/gh hiccup must NEVER reach the outer discard and lose the branch.
@@ -272,9 +333,11 @@ def main():
     ap.add_argument("--timeout", type=int, default=600)
     ap.add_argument("--no-pr", action="store_true")
     ap.add_argument("--model", default=None, help="pin the model (e.g. claude-opus-4-8); records + warns on mismatch")
+    ap.add_argument("--result-cache", action="store_true",
+                    help="opt-in: reuse a prior accepted patch+receipt on an EXACT fingerprint match (skips the model)")
     a = ap.parse_args()
     r = seif_run(a.repo, a.task, a.test_cmd, budget=a.budget, base=a.base, timeout=a.timeout,
-                 make_pr=not a.no_pr, model=a.model)
+                 make_pr=not a.no_pr, model=a.model, result_cache=(True if a.result_cache else None))
     sys.exit(0 if r["accepted"] else 1)
 
 
