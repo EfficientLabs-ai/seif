@@ -164,13 +164,15 @@ def compile_route(route, changed_files=None, graph=None):
     warnings = []
 
     # ---- lever derivation (honest, measured) ----
-    base = ["-p", "--output-format", "json", "--permission-mode", "acceptEdits", "--model", model]
+    # `extras` = the lean flags AFTER `--model <model>`; tracked separately so the loop can apply them
+    # without re-deriving (lean_flags in the return). claude_argv = core + model + extras.
+    extras = []
     # MCP is always scoped: strict-mcp-config drops all ambient MCP (~43% lever); the route's mcp list is
     # what the loop should re-add via --mcp-config (the only servers this task needs).
-    base.append("--strict-mcp-config")
+    extras.append("--strict-mcp-config")
     if model in LEAN_DEFAULT_MODELS:
         # FULL lean: also drop the user environment (~54% lever). Compatible with the cheap default model.
-        base += ["--setting-sources", "project"]
+        extras += ["--setting-sources", "project"]
         lean = "full"
     else:
         # Pinned strong model: --setting-sources project would force a downgrade (measured), so we keep user
@@ -180,9 +182,10 @@ def compile_route(route, changed_files=None, graph=None):
             f"model '{model}' is not the lean default — keeping user settings to honor it, so the ~54% "
             "user-config saving does not apply (only the ~43% MCP saving). Route to the cheap default for full lean.")
     if tools.get("allow"):
-        base += ["--allowedTools", *list(tools["allow"])]
+        extras += ["--allowedTools", *list(tools["allow"])]
     if tools.get("deny"):
-        base += ["--disallowedTools", *list(tools["deny"])]
+        extras += ["--disallowedTools", *list(tools["deny"])]
+    base = ["-p", "--output-format", "json", "--permission-mode", "acceptEdits", "--model", model] + extras
 
     context_files, unresolved = _resolve_context(route, changed_files, graph)
 
@@ -191,6 +194,7 @@ def compile_route(route, changed_files=None, graph=None):
         "model": model,
         "lean": lean,
         "claude_argv": base,
+        "lean_flags": extras,
         "context_files": context_files,
         "context_unresolved": unresolved,
         "tool_policy": {"allow": list(tools.get("allow") or []), "deny": list(tools.get("deny") or [])},
