@@ -42,14 +42,111 @@ def _slug(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:40] or "task"
 
 
+# A failing test prints file paths in a handful of shapes; pull the source files it actually named so we
+# can scope the retry context to the real blast radius. Conservative on purpose — only paths that LOOK
+# like project source (have a code extension) are treated as seeds; noise becomes "no packet", never a crash.
+_SRC_EXT = (".py", ".js", ".ts", ".tsx", ".jsx", ".mjs", ".go", ".rs", ".java", ".rb", ".c", ".cc",
+            ".cpp", ".h", ".hpp", ".cs", ".php", ".swift", ".kt", ".scala")
+# `File "x/y.py", line N` (Python tracebacks) · `at x/y.ts:12:3` (node) · bare `pkg/mod.py:42` (pytest/grep).
+_FILE_PATTERNS = (
+    re.compile(r'File "([^"]+)"'),
+    re.compile(r'\bat\s+([^\s():]+\.[A-Za-z]+):\d+'),
+    re.compile(r'([A-Za-z0-9_./\-]+\.[A-Za-z]+):\d+'),
+)
+
+
+# A path is allowed into the packet only if it matches a strict file-path shape (no spaces, no newlines, no
+# shell/prompt-control punctuation). The packet text is built from two UNTRUSTED sources — failing-test
+# output AND graph `source_file` strings (graphify-out/graph.json can carry arbitrary text) — so every path,
+# whatever its origin, passes this whitelist before it is formatted into the prompt. Anything that doesn't
+# look like a plain relative path is dropped rather than escaped, so a tampered graph can't smuggle directives.
+_SAFE_PATH = re.compile(r"[A-Za-z0-9_./\-]{1,200}\Z")
+
+
+def _safe_paths(paths):
+    """Keep only whitelist-clean relative paths, de-duped in first-seen order (defense for graph-derived
+    strings injected into the retry prompt)."""
+    seen, out = set(), []
+    for p in (paths or []):
+        p = (str(p) if p is not None else "").strip()
+        if p and _SAFE_PATH.match(p) and p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def _referenced_files(feedback):
+    """Source files named in failing-test output, de-duped in first-seen order. Pure + total: any input
+    (incl. None / garbage) yields a list, never an exception — so the retry packet is always safe to build."""
+    seen, out = set(), []
+    text = feedback or ""
+    for pat in _FILE_PATTERNS:
+        for m in pat.findall(text):
+            path = (m or "").strip().lstrip("./")
+            if not path or not path.lower().endswith(_SRC_EXT):
+                continue
+            if not _SAFE_PATH.match(path):       # reject anything that isn't a plain relative path
+                continue
+            if path not in seen:
+                seen.add(path)
+                out.append(path)
+    return out
+
+
+def _retry_context_packet(repo, feedback):
+    """Graph-scoped retry context for attempt N+1: the blast-radius NEIGHBORS of the files the failing
+    tests named — what DEPENDS ON them (L3 reverse closure via delta_plan._blast_radius) and what they
+    DEPEND ON (forward closure via SemanticMemory.dependencies). Returns a short text block, or "" when
+    there is nothing to add. REGRESSION-SAFETY context, not a token saver (graph scoping measured ~0% on
+    tokens). Degrades cleanly: absent graphify-out / store / module ⇒ "" with no error, never a crash."""
+    try:
+        seeds = _referenced_files(feedback)
+        if not seeds:
+            return ""
+        import delta_plan as DP  # noqa: E402  (logos/ already on sys.path)
+        # reverse closure (what changing these touches) — None means "no graph to answer from".
+        impacted = DP._blast_radius(repo, seeds)
+        # forward closure (what these depend on) — via the same L3 view delta_plan composes over.
+        depends_on = None
+        try:
+            from tripartite import SemanticMemory  # noqa: E402  (memory/ on sys.path via delta_plan import)
+            sm = SemanticMemory(repo)
+            if sm.available:
+                deps = set()
+                for s in seeds:
+                    deps.update(sm.dependencies(s))
+                depends_on = sorted(deps) if sm.available else None
+        except Exception:  # noqa: BLE001 — forward closure is advisory; absence ⇒ omit, never crash
+            depends_on = None
+        # Sanitize every graph-derived path before it reaches the prompt: graph `source_file` strings are an
+        # UNTRUSTED source, so whitelist-filter them (a tampered graph can't smuggle prompt directives).
+        impacted = _safe_paths(impacted)
+        depends_on = _safe_paths(depends_on)
+        # If the graph could answer NEITHER direction, there is no graph-scoped value to add → no packet.
+        if not impacted and not depends_on:
+            return ""
+        lines = ["GRAPH-SCOPED CONTEXT (blast radius of the files the failing tests named — reference data,",
+                 "regression-safety only): when you fix the source, check you do not break these neighbors.",
+                 f"  failing-test files: {', '.join(seeds[:12])}"]
+        if impacted:
+            lines.append(f"  depend on the above (could regress): {', '.join(impacted[:20])}")
+        if depends_on:
+            lines.append(f"  the above depend on: {', '.join(depends_on[:20])}")
+        return "\n".join(lines)
+    except Exception:  # noqa: BLE001 — context is advisory; ANY failure ⇒ no packet, never break the gate
+        return ""
+
+
 def _claude_edit(worktree, task, feedback, first, timeout, model=None, extra_flags=None):
     if first:
         prompt = (f"You are making a focused change in this repository (cwd).\n\nTASK:\n{task}\n\n"
                   "Edit the SOURCE to accomplish it and make the project's tests pass. Do NOT edit tests. "
                   "Make the change and stop.")
     else:
+        # `feedback` is already bounded by the caller (seif_run truncates test output and appends an
+        # optional graph-scoped packet), so embed it whole here rather than re-truncating it.
         prompt = (f"You are fixing a change in this repository (cwd).\n\nTASK:\n{task}\n\n"
-                  f"The project's tests are STILL FAILING:\n{feedback[:4500]}\n\n"
+                  f"The project's tests are STILL FAILING:\n{feedback}\n\n"
                   "Fix the SOURCE so the tests pass. Do NOT edit tests. Make the change and stop.")
     # --output-format json makes the call cost-attributable: the result envelope carries usage + cost.
     # acceptEdits still applies (edits happen); only the FINAL print is a JSON envelope we meter.
@@ -111,6 +208,10 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
     # ECP (opt-in): if a route is given (a compiled dict or a manifest path), compile it into the per-task
     # minimum operating environment — lean flags + routed model + turn budget. route=None → unchanged behavior.
     lean_flags = None
+    # Graph-scoped retry context (regression-safety, NOT a token saver — graph scoping measured ~0% on
+    # tokens). DEFAULT ON when no route is active; when a route IS active it is gated behind the route's
+    # memory policy: enabled only if memory.graph is declared and not explicitly disabled.
+    graph_scope = True
     if route is not None:
         # at task start nothing has changed yet, so the graph-selector context is empty; the route's
         # `required` context + the lean flags + routed model are what apply here (graph-scoped context on
@@ -122,8 +223,14 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
         rb = (compiled.get("budget") or {}).get("max_turns")
         if rb:
             budget = rb
+        # Gate graph-scoped retry context behind the route's memory policy: a route that does NOT declare a
+        # graph memory backend (or sets it falsy/disabled) opts OUT of the L3 packet. memory.graph present
+        # and not explicitly disabled ⇒ keep it on.
+        mem_pol = compiled.get("memory") if isinstance(compiled.get("memory"), dict) else {}
+        graph_pol = mem_pol.get("graph")
+        graph_scope = bool(graph_pol) and not (isinstance(graph_pol, dict) and graph_pol.get("enabled") is False)
         print(f"[/seif] ECP route={compiled.get('route_id')} lean={compiled.get('lean')} model={model} "
-              f"flags={' '.join(lean_flags or [])}")
+              f"graph_scope={graph_scope} flags={' '.join(lean_flags or [])}")
         for w in compiled.get("warnings") or []:
             print(f"[/seif] ECP ⚠️ {w}")
     wt = H.checkpoint(repo, base)
@@ -164,6 +271,13 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                             "tests or test config. Make the source change that passes the EXISTING tests.")
                 continue
             feedback = (result.get("stdout", "") + "\n" + result.get("stderr", ""))[-4500:]
+            # Graph-scoped retry context: append the blast-radius neighbors of the files THESE tests named
+            # so the next attempt sees its regression surface. Gated by the route's memory policy (default
+            # ON without a route); degrades to "" — no packet, no crash — when the graph/store is absent.
+            if graph_scope:
+                packet = _retry_context_packet(repo, feedback)
+                if packet:
+                    feedback = feedback + "\n\n" + packet
         print(f"[/seif] spend: {UM.summary_line(spend)}")
         # CBOM guard (item 3): the receipt's usage already records the model actually served (model_actual).
         # If the caller pinned a model and a DIFFERENT one was served (e.g. a setting-strip forced a
