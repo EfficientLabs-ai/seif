@@ -22,6 +22,7 @@ import integrity_guard as IG  # noqa: E402
 import checkpoint as CP       # noqa: E402  (L4: register verified states / record failure forensics)
 import pr_format as PF        # noqa: E402  (professional, consistent PR body + commit formatting)
 import usage_meter as UM      # noqa: E402  (token + cost accounting — make every model call measurable)
+import ecp_route as ECP       # noqa: E402  (ECP route compiler — opt-in per-task minimum environment)
 
 CLAUDE = "/home/neo/.local/bin/claude"
 
@@ -41,7 +42,7 @@ def _slug(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:40] or "task"
 
 
-def _claude_edit(worktree, task, feedback, first, timeout, model=None):
+def _claude_edit(worktree, task, feedback, first, timeout, model=None, extra_flags=None):
     if first:
         prompt = (f"You are making a focused change in this repository (cwd).\n\nTASK:\n{task}\n\n"
                   "Edit the SOURCE to accomplish it and make the project's tests pass. Do NOT edit tests. "
@@ -53,9 +54,13 @@ def _claude_edit(worktree, task, feedback, first, timeout, model=None):
     # --output-format json makes the call cost-attributable: the result envelope carries usage + cost.
     # acceptEdits still applies (edits happen); only the FINAL print is a JSON envelope we meter.
     # --model pins the model when the caller requests one (so a measured/routed model is honoured).
+    # extra_flags = an ECP route's lean flags (--strict-mcp-config / --setting-sources project / tool
+    # allow-deny) compiled by ecp_route — the per-task "minimum operating environment".
     argv = [CLAUDE, "-p", "--output-format", "json", "--permission-mode", "acceptEdits"]
     if model:
         argv += ["--model", model]
+    if extra_flags:
+        argv += list(extra_flags)
     argv.append(prompt)
     # Retry-on-empty: an empty (zero-token) envelope is an INFRA hiccup, not "the agent made no change".
     # A genuine no-change still returns non-zero usage (the prompt was processed). Retrying a real no-change
@@ -100,9 +105,27 @@ def _resolve_base(repo, base):
 
 
 def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=True, protected=PROTECTED,
-             model=None):
+             model=None, route=None):
     repo = os.path.abspath(repo)
     base = _resolve_base(repo, base)
+    # ECP (opt-in): if a route is given (a compiled dict or a manifest path), compile it into the per-task
+    # minimum operating environment — lean flags + routed model + turn budget. route=None → unchanged behavior.
+    lean_flags = None
+    if route is not None:
+        # at task start nothing has changed yet, so the graph-selector context is empty; the route's
+        # `required` context + the lean flags + routed model are what apply here (graph-scoped context on
+        # retries is a follow-up). Accept a pre-compiled dict or a manifest dict/path.
+        compiled = route if isinstance(route, dict) and "lean_flags" in route else ECP.compile_route(
+            route if isinstance(route, dict) else ECP.load_route(route), changed_files=None)
+        lean_flags = compiled.get("lean_flags")
+        model = model or compiled.get("model")          # explicit model arg still wins
+        rb = (compiled.get("budget") or {}).get("max_turns")
+        if rb:
+            budget = rb
+        print(f"[/seif] ECP route={compiled.get('route_id')} lean={compiled.get('lean')} model={model} "
+              f"flags={' '.join(lean_flags or [])}")
+        for w in compiled.get("warnings") or []:
+            print(f"[/seif] ECP ⚠️ {w}")
     wt = H.checkpoint(repo, base)
     feedback, passed, result, patch, integrity = "", False, None, "", None
     spend = UM.empty()   # token + cost accounting, summed across every attempt of this task
@@ -114,7 +137,7 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
 
         for step in range(1, budget + 1):
             integrity = None                          # never carry a prior step's verdict forward
-            rc, usage = _claude_edit(wt, task, feedback, step == 1, timeout, model=model)
+            rc, usage = _claude_edit(wt, task, feedback, step == 1, timeout, model=model, extra_flags=lean_flags)
             UM.accumulate(spend, usage)               # meter every model call, pass or fail
             patch = _stage_diff()
             if not patch.strip():
