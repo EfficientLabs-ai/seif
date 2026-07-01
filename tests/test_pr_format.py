@@ -45,6 +45,16 @@ class PrBodyTest(unittest.TestCase):
         self.assertIn("the webhook could silently 200", b)
         self.assertIn("charged users always provision", b)
 
+    def test_empty_verification_cannot_satisfy_the_proof_gate(self):
+        # the discipline gate counts any "- x" bullet as filled proof — with NO real
+        # verification the section must contain no bullet at all, so the gate fails
+        # closed instead of being satisfied by a placeholder
+        b = self._body(verification=[])
+        proof = b.split("# Proof / Receipts", 1)[1].split("# Merge Readiness", 1)[0]
+        bullets = [ln for ln in proof.splitlines() if ln.strip().startswith(("- ", "* ", "+ "))]
+        self.assertEqual(bullets, [], "no verification → no proof bullets (fail closed)")
+        self.assertIn("no checks ran", proof)   # a human-readable non-bullet explanation remains
+
     def test_all_pass_shows_gate_verified_chip(self):
         self.assertIn(PF.chip(True, "gate verified"), self._body())
 

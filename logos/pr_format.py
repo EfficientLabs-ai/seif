@@ -103,7 +103,11 @@ def build_pr_body(*, summary, changes, verification, evidence=None, issue=None, 
     parts += ["# Linked Context",
               f"Closes #{int(issue)}" if issue
               else "Gated SEIF run — receipt hash under Proof / Receipts (no tracked issue).", ""]
-    proof = [f"- {_cell(c)}: {'✅' if ok else '⚠️'} {_cell(r)}" for c, r, ok in verification] or ["- (no checks ran)"]
+    # fail closed: with no real verification, emit NO bullet — the discipline gate counts
+    # any filled "- " bullet as proof, so a placeholder bullet would let an evidence-free
+    # PR pass the Proof / Receipts rule
+    proof = ([f"- {_cell(c)}: {'✅' if ok else '⚠️'} {_cell(r)}" for c, r, ok in verification]
+             or ["(no checks ran — attach real verification before this PR can pass the proof gate)"])
     parts += ["# Proof / Receipts", *proof, ""]
     if evidence:
         ev = str(evidence).strip()[:3000]

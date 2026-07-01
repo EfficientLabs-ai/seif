@@ -77,6 +77,42 @@ class PrBaseBranchTest(unittest.TestCase):
     def test_never_raises_on_garbage(self):
         self.assertIsNone(SR._pr_base_branch("/nonexistent/path", "HEAD"))
 
+    def test_remote_prefixed_base_is_normalized(self):
+        # callers may pass a remote-tracking ref (git worktree add accepts them);
+        # 'origin/feat/parent' must resolve to the same stacked base as 'feat/parent',
+        # not probe refs/remotes/origin/origin/... and silently fall back to main
+        _git(self.repo, "checkout", "-q", "-b", "feat/parent")
+        with open(os.path.join(self.repo, "g"), "w") as fh:
+            fh.write("y")
+        _git(self.repo, "add", "-A")
+        _git(self.repo, "commit", "-qm", "parent work")
+        _git(self.repo, "push", "-q", "-u", "origin", "feat/parent")
+        self.assertEqual(SR._pr_base_branch(self.repo, "origin/feat/parent"), "feat/parent")
+        self.assertEqual(SR._pr_base_branch(self.repo, "refs/heads/feat/parent"), "feat/parent")
+        # normalization must not fabricate a stacked base out of the default branch
+        self.assertIsNone(SR._pr_base_branch(self.repo, "origin/main"))
+
+    def test_stale_remote_parent_still_stacks_with_warning(self):
+        # a parent branch with UNPUSHED commits: stacking on the (stale) remote parent is
+        # still strictly closer to the truth than basing on main (which would show the
+        # whole parent history), so the helper stacks and WARNS rather than falling back
+        _git(self.repo, "checkout", "-q", "-b", "feat/parent")
+        with open(os.path.join(self.repo, "g"), "w") as fh:
+            fh.write("y")
+        _git(self.repo, "add", "-A")
+        _git(self.repo, "commit", "-qm", "pushed parent work")
+        _git(self.repo, "push", "-q", "-u", "origin", "feat/parent")
+        with open(os.path.join(self.repo, "h"), "w") as fh:
+            fh.write("z")
+        _git(self.repo, "add", "-A")
+        _git(self.repo, "commit", "-qm", "unpushed parent work")
+        import io
+        from contextlib import redirect_stderr
+        buf = io.StringIO()
+        with redirect_stderr(buf):
+            self.assertEqual(SR._pr_base_branch(self.repo, "HEAD"), "feat/parent")
+        self.assertIn("unpushed", buf.getvalue())
+
 
 class PrTitleSubjectTest(unittest.TestCase):
     def test_short_task_passes_through(self):

@@ -275,6 +275,16 @@ def _pr_base_branch(repo, base_ref):
                                   capture_output=True, text=True).stdout.strip()
         if not name:
             return None
+        # normalize remote-tracking / fully-qualified spellings ('origin/feat/x',
+        # 'refs/heads/feat/x') to the plain branch name — otherwise the remote probe
+        # below looks up refs/remotes/origin/origin/... and silently falls back to
+        # the default branch, recreating the over-broad PR this helper prevents
+        for prefix in ("refs/remotes/origin/", "refs/heads/", "origin/"):
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+                break
+        if not name:
+            return None
         # stacking is only meaningful when the branch exists on the remote
         on_remote = subprocess.run(["git", "-C", repo, "show-ref", "--verify", "-q",
                                     f"refs/remotes/origin/{name}"], capture_output=True)
@@ -283,7 +293,20 @@ def _pr_base_branch(repo, base_ref):
         d = subprocess.run(["git", "-C", repo, "symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"],
                            capture_output=True, text=True).stdout.strip()
         default = d.split("/", 1)[-1] if d else "main"
-        return None if name == default else name
+        if name == default:
+            return None
+        # if the local base has commits the remote branch doesn't, the child PR will
+        # carry them against the stale remote base — still strictly narrower than
+        # basing on the default branch, so stack anyway but say so out loud
+        local = subprocess.run(["git", "-C", repo, "rev-parse", "-q", "--verify", name],
+                               capture_output=True, text=True).stdout.strip()
+        if local:
+            contained = subprocess.run(["git", "-C", repo, "merge-base", "--is-ancestor",
+                                        local, f"refs/remotes/origin/{name}"], capture_output=True)
+            if contained.returncode != 0:
+                sys.stderr.write(f"[/seif] stacked base '{name}' has unpushed commits — the PR diff "
+                                 f"will include them until the parent branch is pushed\n")
+        return name
     except Exception:  # noqa: BLE001 — PR base resolution must never break PR submission
         return None
 
