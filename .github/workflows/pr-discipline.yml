@@ -43,6 +43,11 @@ jobs:
             const ALLOWED_PREFIXES = [
               'feat/', 'fix/', 'docs/', 'chore/',
               'refactor/', 'test/', 'ci/', 'security/', 'release/',
+              // Machine-provenance prefixes: the Codex cloud integration and the SEIF
+              // pipeline name their own branches. NEVER rename such a branch to "fix"
+              // it — renaming the head of an open PR makes GitHub auto-close the PR
+              // (head_ref_deleted; this destroyed efficientlabs-web#35 on 2026-07-01).
+              'codex/', 'seif/',
             ];
             const VAGUE_TITLE = /^(update|fix|changes|wip|misc|stuff|test)\.?$/i;
             const MIN_TITLE_LEN = 10;

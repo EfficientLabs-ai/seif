@@ -62,16 +62,24 @@ def _fence(text):
     return "`" * max(3, longest + 1)
 
 
-def build_pr_body(*, summary, changes, verification, evidence=None, issue=None, codex=None, autonomous=True):
-    """Render a professional PR body.
+def build_pr_body(*, summary, changes, verification, evidence=None, issue=None, codex=None,
+                  autonomous=True, problem=None, impact=None):
+    """Render a professional PR body in the Efficient Labs GitHub Operating Standard shape.
 
-    summary      : one-line "what + why" (bolded banner).
-    changes      : list of (file, purpose) tuples → the Changes table.
-    verification : list of (check, result, ok: bool) tuples → the Verification table + the banner chips.
+    Emits the seven required H1 sections (Summary · Problem · Solution · User / Project
+    Impact · Linked Context · Proof / Receipts · Merge Readiness) so the PR-discipline
+    gate passes BY CONSTRUCTION. Proof renders as filled bullets — the gate counts
+    bullets, not tables.
+
+    summary      : one-line "what + why" (bolded banner under # Summary).
+    changes      : list of (file, purpose) tuples → the Solution table.
+    verification : list of (check, result, ok: bool) tuples → Proof bullets + banner chips.
     evidence     : optional verbose text (test tail / receipt json) → collapsible <details>.
-    issue        : optional int → "Closes #N".
-    codex        : optional {"approved": bool, "verdict": str} → a Codex chip + verification row.
-    autonomous   : adds the "never auto-merged — founder is the merge gate" note.
+    issue        : optional int → "Closes #N" under Linked Context.
+    codex        : optional {"approved": bool, "verdict": str} → a Codex chip + proof bullet.
+    autonomous   : Merge Readiness carries the founder-gate note.
+    problem      : optional "why this exists" text; defaults to restating the task.
+    impact       : optional impact text; defaults to a factual scope sentence.
     """
     verification = [_vrow(r) for r in (verification or [])]
     if codex is not None:
@@ -84,24 +92,26 @@ def build_pr_body(*, summary, changes, verification, evidence=None, issue=None, 
     if autonomous:
         banner_chips.append("🔒 founder-gated merge")
 
-    parts = [f"> **{_inline(summary)}**", ">", "> " + " · ".join(banner_chips), ""]
-    parts += ["## 📦 Changes",
+    parts = ["# Summary", f"> **{_inline(summary)}**", ">", "> " + " · ".join(banner_chips), ""]
+    parts += ["# Problem", _inline(problem) if problem else f"Task: {_inline(summary)}", ""]
+    parts += ["# Solution",
               _table([(f"`{f}`", p) for f, p in (_crow(r) for r in (changes or []))] or [("—", "—")],
                      ["File", "Purpose"]), ""]
-    parts += ["## ✅ Verification",
-              _table([(c, ("✅ " if ok else "⚠️ ") + str(r)) for c, r, ok in verification] or [("—", "—")],
-                     ["Check", "Result"]), ""]
+    parts += ["# User / Project Impact",
+              _inline(impact) if impact else
+              f"{len(changes or [])} file(s) changed behind the SEIF gate; every check below ran for real.", ""]
+    parts += ["# Linked Context",
+              f"Closes #{int(issue)}" if issue
+              else "Gated SEIF run — receipt hash under Proof / Receipts (no tracked issue).", ""]
+    proof = [f"- {_cell(c)}: {'✅' if ok else '⚠️'} {_cell(r)}" for c, r, ok in verification] or ["- (no checks ran)"]
+    parts += ["# Proof / Receipts", *proof, ""]
     if evidence:
         ev = str(evidence).strip()[:3000]
         fence = _fence(ev)
         parts += ["<details>", "<summary>📋 Evidence</summary>", "", fence, ev, fence, "", "</details>", ""]
-    foot = []
-    if issue:
-        foot.append(f"Closes #{int(issue)}")
-    if autonomous:
-        foot.append("never auto-merged — founder is the merge gate")
-    foot.append(PROVENANCE)
-    parts += ["---", " · ".join(foot)]
+    parts += ["# Merge Readiness",
+              "never auto-merged — founder is the merge gate" if autonomous else "Ready pending review.", ""]
+    parts += ["---", PROVENANCE]
     return "\n".join(parts) + "\n"
 
 
