@@ -43,8 +43,6 @@ jobs:
             const ALLOWED_PREFIXES = [
               'feat/', 'fix/', 'docs/', 'chore/',
               'refactor/', 'test/', 'ci/', 'security/', 'release/',
-              // codex/* is the Codex cloud integration's provenance prefix; renaming a PR's head branch auto-closes the PR, so it is allowed as-is.
-              'codex/',
             ];
             const VAGUE_TITLE = /^(update|fix|changes|wip|misc|stuff|test)\.?$/i;
             const MIN_TITLE_LEN = 10;
