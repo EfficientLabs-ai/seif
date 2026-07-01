@@ -44,3 +44,6 @@ You can propose a new ADR by opening the **architecture_decision** issue form in
 
 | ADR | Title | Status | Date | Supersedes / Superseded by |
 |-----|-------|--------|------|----------------------------|
+| 0001 | StratosAgent is the memory authority | proposed | 2026-06-28 | - |
+| 0002 | Stripe plus self-hosted Postgres is the production state model | proposed | 2026-06-28 | - |
+| 0003 | Two-plane VPS topology for launch | proposed | 2026-06-28 | - |
