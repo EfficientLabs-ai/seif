@@ -20,10 +20,40 @@ class PrBodyTest(unittest.TestCase):
     def test_has_banner_changes_and_verification_sections(self):
         b = self._body()
         self.assertIn("> **add the widget**", b)
-        self.assertIn("## 📦 Changes", b)
-        self.assertIn("## ✅ Verification", b)
         self.assertIn("`logos/x.py`", b)           # change row rendered as a table cell
-        self.assertIn("| Check | Result |", b)      # verification table header
+        self.assertIn("- Tests (`unittest`): ✅ 138 pass (exit 0)", b)  # proof rendered as a FILLED BULLET
+
+    # ---- Efficient Labs GitHub Operating Standard: the seven required H1 sections ----
+    def test_emits_all_required_h1_sections(self):
+        b = self._body()
+        for section in ("# Summary", "# Problem", "# Solution", "# User / Project Impact",
+                        "# Linked Context", "# Proof / Receipts", "# Merge Readiness"):
+            self.assertIn(f"\n{section}\n", "\n" + b)  # exact H1 at line start
+
+    def test_proof_section_has_filled_bullets(self):
+        # the discipline gate counts "- x" bullets with content after any "Label:" prefix —
+        # a table does NOT count, so proof MUST render as bullets.
+        b = self._body()
+        proof = b.split("# Proof / Receipts", 1)[1].split("# Merge Readiness", 1)[0]
+        bullets = [ln for ln in proof.splitlines() if ln.strip().startswith("- ")]
+        self.assertTrue(bullets, "proof section must contain bullets")
+        self.assertTrue(any(ln.split(":", 1)[1].strip() for ln in bullets if ":" in ln),
+                        "at least one bullet must have content beyond its label")
+
+    def test_problem_and_impact_params_render(self):
+        b = self._body(problem="the webhook could silently 200", impact="charged users always provision")
+        self.assertIn("the webhook could silently 200", b)
+        self.assertIn("charged users always provision", b)
+
+    def test_empty_verification_cannot_satisfy_the_proof_gate(self):
+        # the discipline gate counts any "- x" bullet as filled proof — with NO real
+        # verification the section must contain no bullet at all, so the gate fails
+        # closed instead of being satisfied by a placeholder
+        b = self._body(verification=[])
+        proof = b.split("# Proof / Receipts", 1)[1].split("# Merge Readiness", 1)[0]
+        bullets = [ln for ln in proof.splitlines() if ln.strip().startswith(("- ", "* ", "+ "))]
+        self.assertEqual(bullets, [], "no verification → no proof bullets (fail closed)")
+        self.assertIn("no checks ran", proof)   # a human-readable non-bullet explanation remains
 
     def test_all_pass_shows_gate_verified_chip(self):
         self.assertIn(PF.chip(True, "gate verified"), self._body())
@@ -65,7 +95,8 @@ class PrBodyTest(unittest.TestCase):
 
     # ---- markdown-safety: untrusted cell content must never break the table ----
     def test_pipe_in_cells_is_escaped(self):
-        # a `|` in a filename, a purpose, and a verification result must be escaped, not a new column
+        # a `|` in a filename or purpose must be escaped, not a new column; proof bullets
+        # reuse the same escaping so odd characters render inertly there too
         b = self._body(
             changes=[("logos/a|b.py", "does x | y")],
             verification=[("Tests | unit", "138 pass | exit 0", True)])

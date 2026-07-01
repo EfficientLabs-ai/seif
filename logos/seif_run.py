@@ -260,6 +260,71 @@ def _resolve_base(repo, base):
     return commit or "HEAD"
 
 
+def _pr_base_branch(repo, base_ref):
+    """The remote branch the run was actually cut from, or None for the default flow.
+
+    A run cut from a feature branch must open a STACKED PR against that branch: `gh pr create`
+    without --base targets the default branch, which makes the PR show the whole parent diff,
+    misstates its scope, and inherits every parent conflict (this is how efficientlabs-web#35
+    became a 33-file "one new file" PR). Returns None when the base is the default branch,
+    detached, unknown, or not on the remote — the caller then omits --base."""
+    try:
+        name = base_ref
+        if name in ("HEAD", None, ""):
+            name = subprocess.run(["git", "-C", repo, "symbolic-ref", "--short", "-q", "HEAD"],
+                                  capture_output=True, text=True).stdout.strip()
+        if not name:
+            return None
+        # normalize remote-tracking / fully-qualified spellings ('origin/feat/x',
+        # 'refs/heads/feat/x') to the plain branch name — otherwise the remote probe
+        # below looks up refs/remotes/origin/origin/... and silently falls back to
+        # the default branch, recreating the over-broad PR this helper prevents
+        for prefix in ("refs/remotes/origin/", "refs/heads/", "origin/"):
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+                break
+        if not name:
+            return None
+        # stacking is only meaningful when the branch exists on the remote
+        on_remote = subprocess.run(["git", "-C", repo, "show-ref", "--verify", "-q",
+                                    f"refs/remotes/origin/{name}"], capture_output=True)
+        if on_remote.returncode != 0:
+            return None
+        d = subprocess.run(["git", "-C", repo, "symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"],
+                           capture_output=True, text=True).stdout.strip()
+        default = d.split("/", 1)[-1] if d else "main"
+        if name == default:
+            return None
+        # if the local base has commits the remote branch doesn't, the child PR will
+        # carry them against the stale remote base — still strictly narrower than
+        # basing on the default branch, so stack anyway but say so out loud
+        local = subprocess.run(["git", "-C", repo, "rev-parse", "-q", "--verify", name],
+                               capture_output=True, text=True).stdout.strip()
+        if local:
+            contained = subprocess.run(["git", "-C", repo, "merge-base", "--is-ancestor",
+                                        local, f"refs/remotes/origin/{name}"], capture_output=True)
+            if contained.returncode != 0:
+                sys.stderr.write(f"[/seif] stacked base '{name}' has unpushed commits — the PR diff "
+                                 f"will include them until the parent branch is pushed\n")
+        return name
+    except Exception:  # noqa: BLE001 — PR base resolution must never break PR submission
+        return None
+
+
+def _pr_title_subject(task):
+    """First line of the task, truncated at a WORD boundary — a readable PR title, never raw
+    goal text sheared mid-word (the old task[:64] produced titles like '…(create t')."""
+    line = _inline_first_line(task)
+    if len(line) <= 64:
+        return line
+    cut = line[:64].rsplit(" ", 1)[0].rstrip(" ,;:.-(") or line[:64]
+    return cut + "…"
+
+
+def _inline_first_line(text):
+    return (str(text or "").strip().splitlines() or [""])[0].strip()
+
+
 def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=True, protected=PROTECTED,
              model=None, route=None, result_cache=None):
     repo = os.path.abspath(repo)
@@ -509,9 +574,12 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                     slug = _repo_slug(repo)
                     # professional, scannable PR body in the SEIF house style (pr_format) — same shape every PR.
                     changed = IG.changed_files(patch or "")
-                    title = PF.build_commit("feat", task[:64], scope="seif").splitlines()[0]
+                    title = PF.build_commit("feat", _pr_title_subject(task), scope="seif").splitlines()[0]
                     body = PF.build_pr_body(
                         summary=task[:200],
+                        problem=task[:500],
+                        impact=f"{len(changed)} file(s) changed behind the SEIF gate; tests, integrity "
+                               f"guard, receipt, and checkpoint below all ran for real.",
                         changes=[(f, "—") for f in changed],
                         verification=[(f"Tests (`{test_cmd}`)", f"pass (exit {(result or {}).get('exit_code')})", True),
                                       ("Integrity guard", "clean (no protected/test/CI edits, no bypass sentinel)", True),
@@ -519,9 +587,14 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                                       ("L4 checkpoint", f"`{(checkpoint or {}).get('id')}`", bool(checkpoint))],
                         evidence=((result or {}).get("stdout", "") or "")[-1500:],
                         issue=PF.issue_ref(task))
-                    pr = subprocess.run(["gh", "pr", "create", "-R", slug or repo, "--head", branch,
-                                         "--title", title, "--body", body],
-                                        cwd=wt, capture_output=True, text=True)
+                    # A run cut from a feature branch opens a STACKED PR against that branch —
+                    # basing it on the default branch misstates scope and inherits parent conflicts.
+                    pr_base = _pr_base_branch(repo, base)
+                    cmd = ["gh", "pr", "create", "-R", slug or repo, "--head", branch,
+                           "--title", title, "--body", body]
+                    if pr_base:
+                        cmd += ["--base", pr_base]
+                    pr = subprocess.run(cmd, cwd=wt, capture_output=True, text=True)
                     if pr.returncode == 0:
                         pr_url, landed = pr.stdout.strip(), True
                     else:
