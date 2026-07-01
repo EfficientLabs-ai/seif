@@ -21,7 +21,7 @@ Webhook handling must verify Stripe signatures before parsing privileged events.
 ## Processing rules
 
 1. Verify webhook signature.
-2. Deduplicate by Stripe event id.
+2. Deduplicate by Stripe event id: insert into `stripe_events` (`event_id` primary key, `insert ... on conflict do nothing`) before any side effect; a conflict means the event was already received and processing stops. This covers retries and replays even before a subscription row exists.
 3. Fetch current subscription truth when a subscription id is present.
 4. Map price id to Efficient Labs plan through founder-provisioned price map.
 5. Write subscription mirror row.
@@ -35,7 +35,7 @@ Webhook handling must verify Stripe signatures before parsing privileged events.
 
 - Missing verifier: fail closed.
 - Bad signature: deny and log security event.
-- Duplicate event: no-op after receipt check.
+- Duplicate event: no-op after the `stripe_events` insert conflicts.
 - Unmapped active price: retry and alert, no free record.
 - Database unavailable: retry, no acknowledged entitlement mutation.
 - SEIF receipt failure: fail closed for privileged entitlement changes.

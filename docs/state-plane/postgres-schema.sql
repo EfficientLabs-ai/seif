@@ -38,14 +38,29 @@ create table if not exists workspaces (
   status text not null default 'active',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (organization_id, slug)
+  unique (organization_id, slug),
+  -- Composite-FK target so child rows can prove the workspace belongs to their org.
+  unique (organization_id, id)
 );
 
 create table if not exists stripe_customers (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations(id) on delete cascade,
   stripe_customer_id text not null unique,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Composite-FK target so subscriptions can bind customer and org together.
+  unique (organization_id, stripe_customer_id)
+);
+
+-- Every received Stripe event is recorded here first (insert ... on conflict do nothing).
+-- The primary key on event_id is the deduplication guarantee for webhook retries and
+-- replays, including events that arrive before any subscription row exists.
+create table if not exists stripe_events (
+  event_id text primary key,
+  event_type text not null,
+  payload_sha256 text not null,
+  received_at timestamptz not null default now(),
+  processed_at timestamptz
 );
 
 create table if not exists subscriptions (
@@ -59,32 +74,9 @@ create table if not exists subscriptions (
   current_period_end timestamptz,
   last_stripe_event_id text,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists entitlements (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references organizations(id) on delete cascade,
-  workspace_id uuid references workspaces(id) on delete cascade,
-  key text not null,
-  value jsonb not null default '{}'::jsonb,
-  source text not null check (source in ('free_floor','stripe','founder_grant','migration','manual_review')),
-  valid_from timestamptz not null default now(),
-  valid_until timestamptz,
-  seif_receipt_id uuid,
-  created_at timestamptz not null default now(),
-  unique (organization_id, workspace_id, key)
-);
-
-create table if not exists agent_identities (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references organizations(id) on delete cascade,
-  workspace_id uuid references workspaces(id) on delete cascade,
-  agent_kind text not null check (agent_kind in ('stratos','seif','logos','atmosphere','codex','claude','external')),
-  public_identity text not null,
-  status text not null default 'active',
-  created_at timestamptz not null default now(),
-  unique (organization_id, public_identity)
+  updated_at timestamptz not null default now(),
+  -- A subscription may only reference a known customer of the same organization.
+  foreign key (organization_id, stripe_customer_id) references stripe_customers(organization_id, stripe_customer_id)
 );
 
 create table if not exists seif_receipts (
@@ -98,6 +90,41 @@ create table if not exists seif_receipts (
   previous_receipt_hash text,
   receipt_body jsonb not null,
   created_at timestamptz not null default now()
+);
+
+create table if not exists entitlements (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  workspace_id uuid,
+  key text not null,
+  value jsonb not null default '{}'::jsonb,
+  source text not null check (source in ('free_floor','stripe','founder_grant','migration','manual_review')),
+  valid_from timestamptz not null default now(),
+  valid_until timestamptz,
+  seif_receipt_id uuid references seif_receipts(id),
+  created_at timestamptz not null default now(),
+  unique (organization_id, workspace_id, key),
+  -- Composite FK: the referenced workspace must belong to the same organization.
+  foreign key (organization_id, workspace_id) references workspaces(organization_id, id) on delete cascade
+);
+
+-- Unique constraints treat NULLs as distinct, so org-wide entitlements
+-- (workspace_id is null) need a partial unique index to prevent duplicates.
+create unique index if not exists entitlements_org_wide_key_idx
+  on entitlements (organization_id, key)
+  where workspace_id is null;
+
+create table if not exists agent_identities (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  workspace_id uuid,
+  agent_kind text not null check (agent_kind in ('stratos','seif','logos','atmosphere','codex','claude','external')),
+  public_identity text not null,
+  status text not null default 'active',
+  created_at timestamptz not null default now(),
+  unique (organization_id, public_identity),
+  -- Composite FK: the referenced workspace must belong to the same organization.
+  foreign key (organization_id, workspace_id) references workspaces(organization_id, id) on delete cascade
 );
 
 create table if not exists ecp_packets (

@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-DENY_PARTS = {".env", "vault", ".ssh", ".gnupg", "secrets", "private", "keys"}
+DENY_PARTS = {"vault", ".ssh", ".gnupg", "secrets", "private", "keys"}
 DENY_SUFFIXES = {".pem", ".key", ".p12", ".pfx"}
 MAX_DOC_BYTES = 128 * 1024
 
@@ -32,14 +32,28 @@ def _path_parts(path: Path) -> set[str]:
     return {p.lower() for p in path.parts}
 
 
+def _is_env_like(part: str) -> bool:
+    """True for env-style names in any path component, case-insensitive.
+
+    Denies .env itself plus dotted variants (.env.production, .env.local,
+    .envrc) and suffixed forms (prod.env)."""
+    lowered = part.lower()
+    return lowered.startswith(".env") or lowered.endswith(".env")
+
+
+def _denied_parts(path: Path) -> bool:
+    parts = _path_parts(path)
+    return bool(parts & DENY_PARTS) or any(_is_env_like(p) for p in parts)
+
+
 def classify_doc(repo: Path, candidate: str) -> tuple[bool, str, Path | None]:
     raw = Path(candidate)
     if raw.is_absolute():
         return False, "absolute paths are not allowed", None
     if any(part == ".." for part in raw.parts):
         return False, "path traversal is not allowed", None
-    if _path_parts(raw) & DENY_PARTS:
-        return False, "path matches denied secret/vault/key segment", None
+    if _denied_parts(raw):
+        return False, "path matches denied secret/vault/env/key segment", None
     if raw.suffix.lower() in DENY_SUFFIXES:
         return False, "path suffix is denied", None
 
@@ -59,7 +73,7 @@ def classify_doc(repo: Path, candidate: str) -> tuple[bool, str, Path | None]:
         return False, "doc is missing or not a file", None
     if resolved.stat().st_size > MAX_DOC_BYTES:
         return False, "doc exceeds size limit", None
-    if _path_parts(resolved.relative_to(resolved_repo)) & DENY_PARTS:
+    if _denied_parts(resolved.relative_to(resolved_repo)):
         return False, "resolved path matches denied segment", None
     return True, "included", resolved
 
@@ -76,8 +90,9 @@ def build_packet(request: dict[str, Any]) -> dict[str, Any]:
             excluded.append({"path": str(doc), "reason": reason})
             continue
         rel = str(path.relative_to(repo_resolved))
-        content = path.read_text(encoding="utf-8", errors="replace")
-        included.append({"path": rel, "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(), "content": content})
+        raw_bytes = path.read_bytes()
+        content = raw_bytes.decode("utf-8", errors="replace")
+        included.append({"path": rel, "sha256": hashlib.sha256(raw_bytes).hexdigest(), "content": content})
 
     packet = {
         "schema": "codex.seif.ecp.task.v1",

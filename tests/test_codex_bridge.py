@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import tempfile
@@ -41,6 +42,31 @@ class TestCodexBridge(unittest.TestCase):
         if "docs/leak.md" in excluded:
             self.assertIn("symlink", excluded["docs/leak.md"])
         self.assertEqual(len(packet["receipt_hash"]), 64)
+
+    def test_env_variant_paths_are_denied(self):
+        repo = self.make_repo()
+        (repo / ".env.production").write_text("TOKEN=secret", encoding="utf-8")
+        (repo / ".env.local").write_text("TOKEN=secret", encoding="utf-8")
+        (repo / "prod.env").write_text("TOKEN=secret", encoding="utf-8")
+        (repo / "config").mkdir()
+        (repo / "config" / ".env.staging").write_text("TOKEN=secret", encoding="utf-8")
+        docs = [".env.production", ".env.local", "prod.env", "config/.env.staging", "docs/safe.md"]
+        packet = build_packet({"repo": str(repo), "docs": docs})
+        self.assertEqual([d["path"] for d in packet["included_docs"]], ["docs/safe.md"])
+        excluded = {d["path"] for d in packet["excluded_docs"]}
+        for denied in (".env.production", ".env.local", "prod.env", "config/.env.staging"):
+            self.assertIn(denied, excluded)
+
+    def test_doc_sha256_hashes_raw_bytes_before_lossy_decode(self):
+        repo = self.make_repo()
+        # Two distinct byte streams that decode identically under errors="replace".
+        (repo / "docs" / "a.bin.md").write_bytes(b"\xff\xfe")
+        (repo / "docs" / "b.bin.md").write_bytes(b"\xfe\xff")
+        packet = build_packet({"repo": str(repo), "docs": ["docs/a.bin.md", "docs/b.bin.md"]})
+        docs = {d["path"]: d for d in packet["included_docs"]}
+        self.assertEqual(docs["docs/a.bin.md"]["content"], docs["docs/b.bin.md"]["content"])
+        self.assertNotEqual(docs["docs/a.bin.md"]["sha256"], docs["docs/b.bin.md"]["sha256"])
+        self.assertEqual(docs["docs/a.bin.md"]["sha256"], hashlib.sha256(b"\xff\xfe").hexdigest())
 
     def test_receipt_hash_is_deterministic(self):
         repo = self.make_repo()
