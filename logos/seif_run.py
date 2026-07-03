@@ -416,9 +416,23 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
         except Exception as e:  # noqa: BLE001 — a cache hiccup must NEVER block the gate; degrade to no-cache
             sys.stderr.write(f"[/seif] result-cache disabled (error: {e!r})\n")
             rcache, cache_fp = None, None
-    wt = H.checkpoint(repo, base)
+    spend = UM.empty()   # token + cost accounting, summed across every attempt of this task — initialized
+    # BEFORE the clean room so a checkpoint failure below can still mint a (empty-spend) receipt.
+    try:
+        wt = H.checkpoint(repo, base)
+    except Exception as e:  # noqa: BLE001 — clean-room creation itself failed (tmpfs exhaustion, bad base
+        # ref, git failure): no worktree exists yet, so there's nothing to discard, but the ERROR
+        # disposition must still be receipted — this was the last un-receipted terminal path in the gate.
+        try:
+            H._receipt(repo, task, test_cmd, {"outcome": "error", "exit_code": None}, "", usage=spend,
+                       metering={"attempt_number": 0, "empty_response_retries": 0, "checkpoint_id": None,
+                                 "route_id_selected": route_id_selected,
+                                 "evidence_result": f"clean-room checkpoint failed: {type(e).__name__}: {str(e)[:200]}",
+                                 "final_outcome": "ERROR"})
+        except Exception:  # noqa: BLE001 — receipt bookkeeping must never mask the original fault
+            pass
+        raise
     feedback, passed, result, patch, integrity = "", False, None, "", None
-    spend = UM.empty()   # token + cost accounting, summed across every attempt of this task
     # production metering (A-loop): attempt_number = the budget step that produced the accepted (or last)
     # patch; empty_response_retries = total zero-token retries absorbed across all steps (an infra-hiccup
     # fingerprint, summed because each step's _claude_edit reports its own retries on the usage dict).
@@ -610,17 +624,20 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                 "receipt": rec, "patch": patch, "reason": "verified", "integrity": integrity,
                 "checkpoint": checkpoint, "usage": spend, "route_id_selected": route_id_selected,
                 "model_requested": model, "model_actual": spend.get("model")}
-    except Exception as e:  # noqa: BLE001
-        # final_outcome=ERROR: an unexpected fault (not a clean test/integrity verdict). Mint a best-effort
-        # receipt so the failure is RECORDED (tamper-evident, with the metering captured so far) before we
-        # roll back and re-raise — the ERROR disposition must never be a silent gap in the receipt chain.
+    except BaseException as e:  # noqa: BLE001 — also covers operator aborts (KeyboardInterrupt/SystemExit),
+        # not just Exception subclasses, so an interrupted run is receipted the same as any other fault.
+        # final_outcome=ERROR (or ABORT for a non-Exception signal): an unexpected fault or operator abort,
+        # not a clean test/integrity verdict. Mint a best-effort receipt so the failure is RECORDED
+        # (tamper-evident, with the metering captured so far) before we roll back and re-raise — this
+        # disposition must never be a silent gap in the receipt chain.
+        final_outcome = "ERROR" if isinstance(e, Exception) else "ABORT"
         try:
             H._receipt(repo, task, test_cmd, {"outcome": "error", "exit_code": None}, patch, usage=spend,
                        metering={"attempt_number": attempt_number,
                                  "empty_response_retries": empty_response_retries, "checkpoint_id": None,
                                  "route_id_selected": route_id_selected,
                                  "evidence_result": f"unexpected error: {type(e).__name__}: {str(e)[:200]}",
-                                 "final_outcome": "ERROR"})
+                                 "final_outcome": final_outcome})
         except Exception:  # noqa: BLE001 — receipt bookkeeping must never mask the original fault
             pass
         H.discard(repo, wt)
