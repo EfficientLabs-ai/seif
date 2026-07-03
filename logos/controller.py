@@ -201,9 +201,19 @@ class Controller:
     def dispatch(self, task, idx=0):
         """Run ONE task through the gate as a worker, with caps + memory + receipt + founder-queue all
         handled by the REUSED `seif_loop.run_one`. The task's authoritative route (explicit/intent/path)
-        is resolved up-front and injected into the worker. Returns the per-task record."""
+        is resolved up-front and injected into the worker. Returns the per-task record.
+
+        Same queue_path redirect as `run()`: `run_one` queues a landed task via `SL.FOUNDER_QUEUE`
+        resolved at call time, so dispatch() must save/set/restore it too — otherwise a Controller
+        constructed with `queue_path=` would still append to the production founder queue here."""
         runner = self._route_runner(self._build_route_index([task]))
-        return SL.run_one(task, self.mem, self.cfg, runner=runner, idx=idx)
+        orig_q = SL.FOUNDER_QUEUE
+        if self.queue_path:
+            SL.FOUNDER_QUEUE = self.queue_path
+        try:
+            return SL.run_one(task, self.mem, self.cfg, runner=runner, idx=idx)
+        finally:
+            SL.FOUNDER_QUEUE = orig_q
 
     def run(self):
         """Drive the whole held backlog through the gate with caps + the accept-rate floor + the founder

@@ -78,6 +78,27 @@ class ControllerTest(unittest.TestCase):
         self.assertEqual(rec["task_id"], "t_ok")
         self.assertEqual(len(CALLS), 1, "exactly one worker launched per dispatch")
 
+    def test_dispatch_redirects_founder_queue_to_controller_queue_path(self):
+        # dispatch() must apply the same save/redirect/restore pattern run() uses — a Controller
+        # constructed with queue_path= must never append to SL.FOUNDER_QUEUE's default when used via
+        # dispatch() directly (this is exactly how leaked fixture lines reached the production queue).
+        sentinel = os.path.join(self.tmp, "sentinel-default-queue.jsonl")
+        orig_default = SL.FOUNDER_QUEUE
+        SL.FOUNDER_QUEUE = sentinel
+        try:
+            ctrl = self._ctrl([])
+            rec = ctrl.dispatch(self._task("t_ok", "ACCEPT"))
+            self.assertTrue(rec["accepted"])
+            self.assertTrue(rec["landed"])
+            queued = ctrl.founder_queue()
+            self.assertEqual(len(queued), 1)
+            self.assertEqual(queued[0]["task_id"], "t_ok")
+            self.assertFalse(os.path.exists(sentinel) and os.path.getsize(sentinel) > 0,
+                             "dispatch() must not write to SL.FOUNDER_QUEUE's default")
+            self.assertEqual(SL.FOUNDER_QUEUE, sentinel, "the default must be restored after dispatch()")
+        finally:
+            SL.FOUNDER_QUEUE = orig_default
+
     def test_run_dispatches_whole_backlog(self):
         out = self._ctrl([self._task("a", "ACCEPT"), self._task("b", "INTEGRITY"),
                           self._task("c", "tests-fail")]).run()
