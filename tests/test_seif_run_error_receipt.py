@@ -149,6 +149,48 @@ class SeifRunErrorReceiptTest(unittest.TestCase):
                                  capture_output=True, text=True).stdout.strip().splitlines()
         self.assertEqual(len(wt_list), 2, "the worktree must NOT be discarded — the accepted work survives (main + the accepted worktree)")
 
+    def test_late_abort_during_cache_store_does_not_mint_contradictory_second_receipt(self):
+        # Codex, round 2, closed: the first fix only widened the push/gh-create block's OWN except to
+        # BaseException. The result-cache store block sits in the SAME post-ACCEPTED_PR-receipt region
+        # with the identical exposure (its own except was still `Exception` only) — an interrupt there
+        # must ALSO be absorbed by the region's outer handler, not escape to the outer discard-and-
+        # double-receipt handler.
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "logos"))
+        import result_cache as RC  # noqa: E402
+        rcache = RC.ResultCache(path=os.path.join(self.tmp, "cache.json"))
+
+        def fix(wt, *a, **k):
+            open(os.path.join(wt, "calc.py"), "w").write("def add(a, b):\n    return a + b\n")
+            return 0, SR.UM.empty()
+
+        with mock.patch.object(SR, "_claude_edit", side_effect=fix):
+            with mock.patch.object(rcache, "store", side_effect=KeyboardInterrupt()):
+                result = SR.seif_run(self.repo, "task", self.cmd, budget=1, make_pr=False, route=False,
+                                     result_cache=rcache)
+
+        self.assertTrue(result["accepted"], result)
+        self.assertIn("branch and receipt are safe", result.get("pr") or "")
+        recs = self._receipts()
+        self.assertEqual(len(recs), 1, "exactly ONE receipt — a cache-store interrupt must not mint a second, contradictory ABORT receipt")
+        self.assertEqual(recs[0]["final_outcome"], "ACCEPTED_PR")
+
+    def test_late_abort_during_has_remote_check_does_not_mint_contradictory_second_receipt(self):
+        # Codex, round 2, closed: _has_remote(repo) ran BEFORE any try block at all — an interrupt there
+        # had no local handler whatsoever and went straight to the outer discard-and-double-receipt path.
+        def fix(wt, *a, **k):
+            open(os.path.join(wt, "calc.py"), "w").write("def add(a, b):\n    return a + b\n")
+            return 0, SR.UM.empty()
+
+        with mock.patch.object(SR, "_claude_edit", side_effect=fix):
+            with mock.patch.object(SR, "_has_remote", side_effect=KeyboardInterrupt()):
+                result = SR.seif_run(self.repo, "task", self.cmd, budget=1, make_pr=True, route=False)
+
+        self.assertTrue(result["accepted"], result)
+        self.assertIn("branch and receipt are safe", result.get("pr") or "")
+        recs = self._receipts()
+        self.assertEqual(len(recs), 1, "exactly ONE receipt — an interrupt during the has_remote check must not mint a second, contradictory ABORT receipt")
+        self.assertEqual(recs[0]["final_outcome"], "ACCEPTED_PR")
+
 
 if __name__ == "__main__":
     unittest.main()

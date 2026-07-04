@@ -573,21 +573,28 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                     "final_outcome": "ACCEPTED_PR"}
         rec = H._receipt(repo, task, test_cmd, result or {"outcome": "no_change", "exit_code": None},
                          patch, usage=spend, metering=metering)
-        # OPT-IN result cache: store this VERIFIED result under its exact fingerprint so an IDENTICAL re-run
-        # (same task/base/test/files/model/flags) reuses this patch + receipt and skips the model. Best-effort
-        # and ISOLATED — a cache write must NEVER reach the outer discard or alter the verified landing.
-        if rcache is not None and cache_fp is not None:
-            try:
-                rcache.store(*cache_fp, protected=protected, patch=patch, receipt=rec,
-                             extra={"branch": branch, "checkpoint_id": (checkpoint or {}).get("id")})
-            except Exception as e:  # noqa: BLE001
-                sys.stderr.write(f"[/seif] result-cache store skipped (error: {e!r})\n")
-        # honest landing state: 'accepted' = tests passed (true regardless); 'landed' = push+PR actually succeeded.
-        # PR SUBMISSION IS BEST-EFFORT and ISOLATED: the work is already verified + committed + receipted +
-        # checkpointed above, so a push/format/gh hiccup must NEVER reach the outer discard and lose the branch.
+        # EVERYTHING FROM HERE THROUGH PR SUBMISSION IS BEST-EFFORT AND ISOLATED (Codex P1, closed —
+        # WIDENED after round-2 review found the fix only covered the push/gh-create block specifically,
+        # leaving the result-cache store and the _has_remote() call in this SAME post-ACCEPTED_PR-receipt
+        # region with the identical unguarded-escape exposure): the work is already verified + committed +
+        # receipted + checkpointed above, so NOTHING in this region — the cache write, the remote check,
+        # the push, the PR create, or a future addition to this block — may reach the outer
+        # discard-and-double-receipt handler. One outer BaseException catch covers the whole region rather
+        # than patching individual call sites, so this class of bug can't resurface as the block grows.
         pr_url, landed = None, False
-        if make_pr and _has_remote(repo):
-            try:
+        try:
+            # OPT-IN result cache: store this VERIFIED result under its exact fingerprint so an IDENTICAL
+            # re-run (same task/base/test/files/model/flags) reuses this patch + receipt and skips the
+            # model. Its own narrower `except Exception` preserves the existing "log and continue" shape
+            # for the common case; the outer BaseException catch below is the safety net underneath it.
+            if rcache is not None and cache_fp is not None:
+                try:
+                    rcache.store(*cache_fp, protected=protected, patch=patch, receipt=rec,
+                                 extra={"branch": branch, "checkpoint_id": (checkpoint or {}).get("id")})
+                except Exception as e:  # noqa: BLE001
+                    sys.stderr.write(f"[/seif] result-cache store skipped (error: {e!r})\n")
+            # honest landing state: 'accepted' = tests passed (true regardless); 'landed' = push+PR actually succeeded.
+            if make_pr and _has_remote(repo):
                 push = subprocess.run(["git", "-C", wt, "push", "-q", "-u", "origin", branch], capture_output=True, text=True)
                 if push.returncode != 0:
                     pr_url = f"(push failed rc={push.returncode}: {push.stderr[-160:]})"
@@ -620,17 +627,10 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                         pr_url, landed = pr.stdout.strip(), True
                     else:
                         pr_url = f"(branch pushed; pr create rc={pr.returncode}: {pr.stderr[-160:]})"
-            except BaseException as e:  # noqa: BLE001 — never lose a VERIFIED branch over a PR-submission
-                # error OR an operator abort (Codex P1, closed): this segment runs AFTER the ACCEPTED_PR
-                # receipt is already minted above, so an interrupt landing here must NOT escape to the
-                # outer `except BaseException` — that handler mints a SECOND, contradictory ABORT receipt
-                # on top of the just-written ACCEPTED_PR one and calls H.discard(repo, wt), directly
-                # violating this segment's own "best-effort and ISOLATED... must NEVER reach the outer
-                # discard" contract. Catching BaseException HERE (identical handling to any other
-                # exception in this block: recorded, not fatal, falls through to the normal accepted
-                # return below) closes that window — matches the outer handler's own reasoning for why it
-                # catches BaseException, applied to the segment that actually needed it.
-                pr_url = f"(pr submission error or interrupted, branch and receipt are safe: {e!r})"
+        except BaseException as e:  # noqa: BLE001 — see the region comment above: nothing here may reach
+            # the outer discard-and-double-receipt handler, whether it's a push/gh hiccup, an operator
+            # abort, or a failure in the cache-store/has_remote steps this catch now also covers.
+            pr_url = f"(post-accept step failed or interrupted, branch and receipt are safe: {e!r})"
         where = pr_url or ("local branch only (no remote)" if not make_pr or not _has_remote(repo) else None)
         cp_id = (checkpoint or {}).get("id")
         print(f"[/seif] VERIFIED ✓  branch={branch}  landed={landed}  where={where}  "
