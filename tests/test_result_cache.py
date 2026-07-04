@@ -58,6 +58,19 @@ class FingerprintTest(unittest.TestCase):
     def test_none_lean_flags_distinct_from_empty_list(self):
         self.assertNotEqual(RC.fingerprint(*ARGS[:5], None), RC.fingerprint(*ARGS[:5], []))
 
+    def test_protected_defaults_to_none_unchanged_for_existing_callers(self):
+        # Codex P2, closed. protected is keyword-only with default None so every EXISTING positional call
+        # (the whole ARGS-based suite above) is byte-identical to before this fix.
+        self.assertEqual(RC.fingerprint(*ARGS), RC.fingerprint(*ARGS, protected=None))
+
+    def test_different_protected_sets_produce_different_fingerprints(self):
+        # THE integrity-gate-bypass fix: a patch accepted under a relaxed protected set must not
+        # fingerprint-collide with an identical-inputs run under a different (e.g. strict) protected set.
+        fp_strict = RC.fingerprint(*ARGS, protected=("tests/**", "logos/**"))
+        fp_relaxed = RC.fingerprint(*ARGS, protected=("logos/**",))
+        self.assertNotEqual(fp_strict, fp_relaxed)
+        self.assertNotEqual(RC.fingerprint(*ARGS, protected=None), RC.fingerprint(*ARGS, protected=()))
+
 
 class FileHashTest(unittest.TestCase):
     def setUp(self):
@@ -122,6 +135,17 @@ class FileBackendCacheTest(unittest.TestCase):
         self.assertIsNone(self.rc.lookup(*ARGS[:4], "claude-haiku", ARGS[5]))  # model
         self.assertIsNone(self.rc.lookup(*ARGS[:5], []))                      # lean_flags
         self.assertIsNotNone(self.rc.lookup(*ARGS))                          # the exact key still hits
+
+    def test_entry_stored_under_one_protected_set_does_not_hit_under_another(self):
+        # Codex P2, closed: this is the actual integrity-gate-bypass scenario — a patch accepted under a
+        # RELAXED protected set must not be reusable for an identical-inputs run under a DIFFERENT one.
+        self.rc.store(*ARGS, protected=("logos/**",), patch="RELAXED-PATCH", receipt={"h": "r1"})
+        self.assertIsNone(self.rc.lookup(*ARGS, protected=("tests/**", "logos/**")),
+                           "a stricter protected set must MISS an entry stored under a relaxed one")
+        self.assertIsNone(self.rc.lookup(*ARGS),  # protected=None (the caller didn't specify one)
+                           "omitting protected entirely must also MISS an entry stored under a specific one")
+        self.assertIsNotNone(self.rc.lookup(*ARGS, protected=("logos/**",)),
+                              "the exact same protected set still hits")
 
     def test_invalidate_drops_entry(self):
         self.rc.store(*ARGS, patch="P", receipt={"h": "r"})
@@ -211,6 +235,36 @@ class SeifRunWiringTest(unittest.TestCase):
         # the reused result is the stored patch + receipt from run 1
         self.assertEqual(r2["patch"], r1["patch"])
         self.assertEqual(r2["receipt"]["h"], r1["receipt"]["h"])
+
+    def test_relaxed_protected_run_is_not_replayed_under_a_stricter_override(self):
+        # Codex P2, closed — THE end-to-end integrity-gate-bypass scenario: run 1 is accepted under the
+        # DEFAULT protected set (calc.py is an ordinary source file, not protected, so the edit is clean).
+        # Run 2 has the identical task/base/test/model/flags but a STRICTER override that additionally
+        # protects calc.py — as if a founder-approved protected set for a DIFFERENT task had locked it
+        # down. Before this fix, `protected` was absent from cache_fp entirely, so run 2 would HIT run 1's
+        # cache entry and silently reuse its ACCEPTED patch + receipt WITHOUT ever re-running IG.is_clean
+        # under the stricter set — bypassing the very check that set exists to enforce.
+        edit, calls = self._honest_edit()
+        with mock.patch.object(SR, "_claude_edit", side_effect=edit):
+            r1 = SR.seif_run(self.repo, "fix add", self.cmd, budget=1, base="HEAD",
+                             make_pr=False, result_cache=self.cache)  # protected defaults to SR.PROTECTED
+        self.assertTrue(r1["accepted"], r1)
+        self.assertNotEqual(r1.get("reason"), "cache_hit")
+        H.discard(self.repo, r1["worktree"])
+
+        # run 2: IDENTICAL task/base/test/model/flags, but a STRICTER override that protects calc.py too.
+        stricter = SR.PROTECTED + ("calc.py",)
+        edit2, calls2 = self._honest_edit()
+        with mock.patch.object(SR, "_claude_edit", side_effect=edit2) as m2:
+            r2 = SR.seif_run(self.repo, "fix add", self.cmd, budget=1, base="HEAD",
+                             make_pr=False, result_cache=self.cache, protected=stricter)
+        self.assertNotEqual(r2.get("reason"), "cache_hit",
+                            "a different protected set must MISS run 1's cache entry")
+        self.assertFalse(r2.get("cache_hit"))
+        m2.assert_called()   # the model/integrity-check ran — NOT bypassed via a cross-protected-set cache hit
+        self.assertEqual(calls2["n"], 1)
+        self.assertFalse(r2["accepted"], "under the stricter override, editing calc.py correctly integrity-fails")
+        self.assertEqual(r2.get("reason"), "integrity_violation")
 
     def test_changed_task_misses_and_runs_model(self):
         edit, calls = self._honest_edit()

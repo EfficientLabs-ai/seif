@@ -90,13 +90,22 @@ def _canonical(lean_flags):
     return list(lean_flags)
 
 
-def fingerprint(task, base_commit, test_cmd, changed_hashes, model, lean_flags):
+def fingerprint(task, base_commit, test_cmd, changed_hashes, model, lean_flags, *, protected=None):
     """The EXACT cache key. sha256 over a canonical JSON of every field that determines the model's output.
 
     `changed_hashes` is the [[path, sha], ...] structure from changed_file_hashes (already sorted). Every
     argument is included verbatim; there is no normalization that could collapse two genuinely different
     inputs to one key (that would be unsafe fuzzy reuse). `sort_keys=True` + a fixed field ORDER make the
-    digest deterministic across processes and Python versions."""
+    digest deterministic across processes and Python versions.
+
+    `protected` (Codex P2, closed — INTEGRITY-GATE BYPASS): the founder-approved protected-path set the
+    run was accepted UNDER. Without this, a patch accepted once under a RELAXED --protected override
+    (e.g. allowing test-file edits for a task that legitimately adds tests) could later be silently
+    replayed for an identical task/base/test/model/flags run under the STRICT default protected set,
+    bypassing the very integrity check that default exists to enforce — the cache-hit path never re-runs
+    `IG.is_clean`. Keyword-only with a default of None so every EXISTING positional call (and the
+    file-backed cache's historical entries) is byte-identical when omitted; seif_run always passes the
+    resolved value explicitly."""
     payload = {
         "task": task,
         "base_commit": base_commit,
@@ -104,6 +113,7 @@ def fingerprint(task, base_commit, test_cmd, changed_hashes, model, lean_flags):
         "changed_file_hashes": changed_hashes,
         "model": model,
         "lean_flags": _canonical(lean_flags),
+        "protected": _canonical(protected),
     }
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
@@ -131,21 +141,24 @@ class ResultCache:
         """'redis' or 'file' — whatever the underlying WorkingMemory resolved to."""
         return self.mem.backend
 
-    def key_for(self, task, base_commit, test_cmd, changed_hashes, model, lean_flags):
-        return fingerprint(task, base_commit, test_cmd, changed_hashes, model, lean_flags)
+    def key_for(self, task, base_commit, test_cmd, changed_hashes, model, lean_flags, *, protected=None):
+        return fingerprint(task, base_commit, test_cmd, changed_hashes, model, lean_flags, protected=protected)
 
-    def lookup(self, task, base_commit, test_cmd, changed_hashes, model, lean_flags):
+    def lookup(self, task, base_commit, test_cmd, changed_hashes, model, lean_flags, *, protected=None):
         """Return the cached entry dict on an EXACT fingerprint hit, else None. A hit means EVERY field
-        matched byte-for-byte; any single difference computed a different key and returns None (a MISS)."""
-        key = self.key_for(task, base_commit, test_cmd, changed_hashes, model, lean_flags)
+        matched byte-for-byte; any single difference computed a different key and returns None (a MISS).
+        `protected` (keyword-only, default None — see fingerprint()'s doc) — a lookup under one protected
+        set never hits an entry stored under a different one."""
+        key = self.key_for(task, base_commit, test_cmd, changed_hashes, model, lean_flags, protected=protected)
         return self.mem.get(key, default=None)
 
     def store(self, task, base_commit, test_cmd, changed_hashes, model, lean_flags,
-              patch, receipt, *, extra=None, ttl=...):
+              patch, receipt, *, protected=None, extra=None, ttl=...):
         """Record an accepted result under its exact fingerprint. Returns the stored entry. `extra` is an
         optional dict merged into the entry (e.g. branch / checkpoint id). `ttl` defaults to the cache's
-        configured TTL; pass None for no expiry."""
-        key = self.key_for(task, base_commit, test_cmd, changed_hashes, model, lean_flags)
+        configured TTL; pass None for no expiry. `protected` (keyword-only, default None — see
+        fingerprint()'s doc) is part of the key, not just recorded metadata."""
+        key = self.key_for(task, base_commit, test_cmd, changed_hashes, model, lean_flags, protected=protected)
         entry = {
             "fingerprint": key,
             "task": task,
@@ -154,6 +167,7 @@ class ResultCache:
             "changed_file_hashes": changed_hashes,
             "model": model,
             "lean_flags": _canonical(lean_flags),
+            "protected": _canonical(protected),
             "patch": patch,
             "receipt": receipt,
             "cached_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -164,9 +178,9 @@ class ResultCache:
         self.mem.set(key, entry, ttl=use_ttl)
         return entry
 
-    def invalidate(self, task, base_commit, test_cmd, changed_hashes, model, lean_flags):
+    def invalidate(self, task, base_commit, test_cmd, changed_hashes, model, lean_flags, *, protected=None):
         """Drop a cached entry by fingerprint (e.g. if a downstream re-verify finds it stale)."""
-        key = self.key_for(task, base_commit, test_cmd, changed_hashes, model, lean_flags)
+        key = self.key_for(task, base_commit, test_cmd, changed_hashes, model, lean_flags, protected=protected)
         self.mem.delete(key)
 
 
@@ -195,6 +209,13 @@ def _selftest():
         assert fingerprint("do X", "abc123", "pytest", ch, "claude-opus-4-8", ["--other"]) != fp
         # None lean_flags is distinct from [] lean_flags
         assert fingerprint("t", "c", "pytest", ch, "m", None) != fingerprint("t", "c", "pytest", ch, "m", [])
+        # protected is part of the key (Codex P2, closed): a relaxed protected-set run must not fingerprint-
+        # collide with a strict default-protected-set run of the identical task/base/test/model/flags.
+        assert fingerprint(*base) == fingerprint(*base, protected=None), "protected defaults to None (unchanged for existing callers)"
+        assert fingerprint(*base, protected=("tests/**",)) != fingerprint(*base, protected=("logos/**",)), \
+            "different protected sets must fingerprint differently"
+        assert fingerprint(*base, protected=None) != fingerprint(*base, protected=()), \
+            "no protected param supplied vs an explicit empty override must NOT collide"
 
         # ---- file content hashing ----
         f1 = os.path.join(tmp, "f1.py")
