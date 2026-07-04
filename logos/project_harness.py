@@ -38,6 +38,19 @@ def _sha(s):
 DEP_DIRS = ("node_modules", ".venv", "venv", "vendor", ".yarn", ".tox")
 
 
+def _seif_tmpdir():
+    """Disk-backed home for ephemeral clean-room worktrees — /tmp is often a small tmpfs that an
+    asset-heavy checkout can fill (killed a real gate run 2026-07-01). SEIF_TMPDIR overrides; otherwise
+    default to ~/.seif/tmp (disk-backed on any sane box). Returns None (→ mkdtemp's system default) if
+    the chosen directory can't be created — degrade, never crash the gate."""
+    chosen = os.environ.get("SEIF_TMPDIR") or os.path.expanduser("~/.seif/tmp")
+    try:
+        os.makedirs(chosen, exist_ok=True)
+    except OSError:
+        return None
+    return chosen
+
+
 def checkpoint(repo, base="HEAD", link_deps=True):
     """Ephemeral, detached git worktree from `base` — the clean room. Returns its path.
 
@@ -46,7 +59,7 @@ def checkpoint(repo, base="HEAD", link_deps=True):
     bugs but aren't. We symlink those dep dirs from the source repo (read-only during tests) so the
     clean room reflects the repo's actual runnable state. (Discovered dogfooding StratosAgent: its
     14/14 suites "failed" in a bare worktree purely because node_modules was missing.)"""
-    wt = tempfile.mkdtemp(prefix="seif-wt-")
+    wt = tempfile.mkdtemp(prefix="seif-wt-", dir=_seif_tmpdir())
     subprocess.run(["git", "-C", repo, "worktree", "add", "--quiet", "--detach", wt, base], check=True)
     # The clean room is a CONTROLLED, separately-gated environment (its verdict is the project's test suite,
     # not the interactive Stop hook). Pre-place the Stop-hook bypass so the nested editor sub-agent isn't
