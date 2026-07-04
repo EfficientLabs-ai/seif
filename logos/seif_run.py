@@ -659,11 +659,21 @@ def main():
                     help="opt-in: reuse a prior accepted patch+receipt on an EXACT fingerprint match (skips the model)")
     ap.add_argument("--no-route", action="store_true",
                     help="disable ECP route auto-select (kill-switch; same as SEIF_NO_ROUTE=1)")
+    ap.add_argument("--protected", action="append", default=None, metavar="PATTERN",
+                    help="founder-approved protected-set override for tasks that legitimately add/edit tests: "
+                         "repeatable; each use supplies one protected path (same vocabulary as the default "
+                         "PROTECTED tuple: dir prefixes ending in '/', fnmatch globs, exact paths). Given at "
+                         "least once, the supplied set REPLACES the default PROTECTED tuple; absent, the "
+                         "default applies unchanged. Gate-bypass sentinels stay enforced regardless "
+                         "(integrity_guard enforces them unconditionally).")
     a = ap.parse_args()
     # auto-select is the default (route=None). --no-route flips the kill-switch (route=False).
+    kw = {}
+    if a.protected is not None:
+        kw["protected"] = tuple(a.protected)
     r = seif_run(a.repo, a.task, a.test_cmd, budget=a.budget, base=a.base, timeout=a.timeout,
                  make_pr=not a.no_pr, model=a.model, route=False if a.no_route else None,
-                 result_cache=(True if a.result_cache else None))
+                 result_cache=(True if a.result_cache else None), **kw)
     sys.exit(0 if r["accepted"] else 1)
 
 
