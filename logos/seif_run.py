@@ -399,7 +399,11 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
             # so the changed-file set is empty here by construction (exact + conservative).
             changed_hashes = RC.changed_file_hashes(repo, [])
             cache_fp = (task, base_commit, test_cmd, changed_hashes, model, lean_flags)
-            hit = rcache.lookup(*cache_fp)
+            # `protected` is passed as a separate keyword, not folded into cache_fp (Codex P2, closed):
+            # a patch accepted under a RELAXED --protected override must never be replayed for an
+            # identical task/base/test/model/flags run under the STRICT default set — the cache-hit path
+            # below never re-runs IG.is_clean, so the protected set MUST be part of the key.
+            hit = rcache.lookup(*cache_fp, protected=protected)
             if hit is not None:
                 print(f"[/seif] RESULT-CACHE HIT (backend={rcache.backend}) — reusing prior accepted patch "
                       f"+ receipt; SKIP model call. receipt h={(hit.get('receipt') or {}).get('h')}")
@@ -416,9 +420,26 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
         except Exception as e:  # noqa: BLE001 — a cache hiccup must NEVER block the gate; degrade to no-cache
             sys.stderr.write(f"[/seif] result-cache disabled (error: {e!r})\n")
             rcache, cache_fp = None, None
-    wt = H.checkpoint(repo, base)
+    spend = UM.empty()   # token + cost accounting, summed across every attempt of this task — initialized
+    # BEFORE the clean room so a checkpoint failure below can still mint a (empty-spend) receipt.
+    try:
+        wt = H.checkpoint(repo, base)
+    except BaseException as e:  # noqa: BLE001 — clean-room creation itself failed (tmpfs exhaustion, bad
+        # base ref, git failure) OR an operator abort (KeyboardInterrupt/SystemExit) landed during it —
+        # catching only Exception here left THIS exact scenario un-receipted, the one the PR title claims
+        # to close (Codex, closed). No worktree exists yet, so there's nothing to discard, but the
+        # disposition must still be receipted — this was the last un-receipted terminal path in the gate.
+        final_outcome = "ERROR" if isinstance(e, Exception) else "ABORT"
+        try:
+            H._receipt(repo, task, test_cmd, {"outcome": "error", "exit_code": None}, "", usage=spend,
+                       metering={"attempt_number": 0, "empty_response_retries": 0, "checkpoint_id": None,
+                                 "route_id_selected": route_id_selected,
+                                 "evidence_result": f"clean-room checkpoint failed: {type(e).__name__}: {str(e)[:200]}",
+                                 "final_outcome": final_outcome})
+        except Exception:  # noqa: BLE001 — receipt bookkeeping must never mask the original fault
+            pass
+        raise
     feedback, passed, result, patch, integrity = "", False, None, "", None
-    spend = UM.empty()   # token + cost accounting, summed across every attempt of this task
     # production metering (A-loop): attempt_number = the budget step that produced the accepted (or last)
     # patch; empty_response_retries = total zero-token retries absorbed across all steps (an infra-hiccup
     # fingerprint, summed because each step's _claude_edit reports its own retries on the usage dict).
@@ -552,21 +573,36 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                     "final_outcome": "ACCEPTED_PR"}
         rec = H._receipt(repo, task, test_cmd, result or {"outcome": "no_change", "exit_code": None},
                          patch, usage=spend, metering=metering)
-        # OPT-IN result cache: store this VERIFIED result under its exact fingerprint so an IDENTICAL re-run
-        # (same task/base/test/files/model/flags) reuses this patch + receipt and skips the model. Best-effort
-        # and ISOLATED — a cache write must NEVER reach the outer discard or alter the verified landing.
-        if rcache is not None and cache_fp is not None:
-            try:
-                rcache.store(*cache_fp, patch=patch, receipt=rec,
-                             extra={"branch": branch, "checkpoint_id": (checkpoint or {}).get("id")})
-            except Exception as e:  # noqa: BLE001
-                sys.stderr.write(f"[/seif] result-cache store skipped (error: {e!r})\n")
-        # honest landing state: 'accepted' = tests passed (true regardless); 'landed' = push+PR actually succeeded.
-        # PR SUBMISSION IS BEST-EFFORT and ISOLATED: the work is already verified + committed + receipted +
-        # checkpointed above, so a push/format/gh hiccup must NEVER reach the outer discard and lose the branch.
+        # EVERYTHING FROM HERE THROUGH PR SUBMISSION IS BEST-EFFORT AND ISOLATED (Codex P1, closed —
+        # WIDENED after round-2 review found the fix only covered the push/gh-create block specifically,
+        # leaving the result-cache store and the _has_remote() call in this SAME post-ACCEPTED_PR-receipt
+        # region with the identical unguarded-escape exposure): the work is already verified + committed +
+        # receipted + checkpointed above, so NOTHING in this region — the cache write, the remote check,
+        # the push, the PR create, or a future addition to this block — may reach the outer
+        # discard-and-double-receipt handler. One outer BaseException catch covers the whole region rather
+        # than patching individual call sites, so this class of bug can't resurface as the block grows.
         pr_url, landed = None, False
-        if make_pr and _has_remote(repo):
-            try:
+        has_remote = False  # safe default if the try below raises before this is ever assigned
+        try:
+            # OPT-IN result cache: store this VERIFIED result under its exact fingerprint so an IDENTICAL
+            # re-run (same task/base/test/files/model/flags) reuses this patch + receipt and skips the
+            # model. Its own narrower `except Exception` preserves the existing "log and continue" shape
+            # for the common case; the outer BaseException catch below is the safety net underneath it.
+            if rcache is not None and cache_fp is not None:
+                try:
+                    rcache.store(*cache_fp, protected=protected, patch=patch, receipt=rec,
+                                 extra={"branch": branch, "checkpoint_id": (checkpoint or {}).get("id")})
+                except Exception as e:  # noqa: BLE001
+                    sys.stderr.write(f"[/seif] result-cache store skipped (error: {e!r})\n")
+            # _has_remote(repo) is called ONCE and cached (Codex, round 3, closed): a second call further
+            # below, purely to compute the human-readable `where` string, used to sit OUTSIDE this try
+            # block entirely — an interrupt landing in THAT unguarded call still reached the outer
+            # discard-and-double-receipt handler even after round 2 widened everything else. Eliminating
+            # the second call (rather than wrapping it in yet another handler) removes the exposure
+            # entirely instead of relying on catching up with every call site individually.
+            has_remote = _has_remote(repo)
+            # honest landing state: 'accepted' = tests passed (true regardless); 'landed' = push+PR actually succeeded.
+            if make_pr and has_remote:
                 push = subprocess.run(["git", "-C", wt, "push", "-q", "-u", "origin", branch], capture_output=True, text=True)
                 if push.returncode != 0:
                     pr_url = f"(push failed rc={push.returncode}: {push.stderr[-160:]})"
@@ -599,9 +635,11 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                         pr_url, landed = pr.stdout.strip(), True
                     else:
                         pr_url = f"(branch pushed; pr create rc={pr.returncode}: {pr.stderr[-160:]})"
-            except Exception as e:  # noqa: BLE001 — never lose a VERIFIED branch over a PR-submission error
-                pr_url = f"(pr submission error, branch is safe: {e!r})"
-        where = pr_url or ("local branch only (no remote)" if not make_pr or not _has_remote(repo) else None)
+        except BaseException as e:  # noqa: BLE001 — see the region comment above: nothing here may reach
+            # the outer discard-and-double-receipt handler, whether it's a push/gh hiccup, an operator
+            # abort, or a failure in the cache-store/has_remote steps this catch now also covers.
+            pr_url = f"(post-accept step failed or interrupted, branch and receipt are safe: {e!r})"
+        where = pr_url or ("local branch only (no remote)" if not make_pr or not has_remote else None)
         cp_id = (checkpoint or {}).get("id")
         print(f"[/seif] VERIFIED ✓  branch={branch}  landed={landed}  where={where}  "
               f"receipt h={rec.get('h')}  checkpoint={cp_id}")
@@ -610,17 +648,20 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                 "receipt": rec, "patch": patch, "reason": "verified", "integrity": integrity,
                 "checkpoint": checkpoint, "usage": spend, "route_id_selected": route_id_selected,
                 "model_requested": model, "model_actual": spend.get("model")}
-    except Exception as e:  # noqa: BLE001
-        # final_outcome=ERROR: an unexpected fault (not a clean test/integrity verdict). Mint a best-effort
-        # receipt so the failure is RECORDED (tamper-evident, with the metering captured so far) before we
-        # roll back and re-raise — the ERROR disposition must never be a silent gap in the receipt chain.
+    except BaseException as e:  # noqa: BLE001 — also covers operator aborts (KeyboardInterrupt/SystemExit),
+        # not just Exception subclasses, so an interrupted run is receipted the same as any other fault.
+        # final_outcome=ERROR (or ABORT for a non-Exception signal): an unexpected fault or operator abort,
+        # not a clean test/integrity verdict. Mint a best-effort receipt so the failure is RECORDED
+        # (tamper-evident, with the metering captured so far) before we roll back and re-raise — this
+        # disposition must never be a silent gap in the receipt chain.
+        final_outcome = "ERROR" if isinstance(e, Exception) else "ABORT"
         try:
             H._receipt(repo, task, test_cmd, {"outcome": "error", "exit_code": None}, patch, usage=spend,
                        metering={"attempt_number": attempt_number,
                                  "empty_response_retries": empty_response_retries, "checkpoint_id": None,
                                  "route_id_selected": route_id_selected,
                                  "evidence_result": f"unexpected error: {type(e).__name__}: {str(e)[:200]}",
-                                 "final_outcome": "ERROR"})
+                                 "final_outcome": final_outcome})
         except Exception:  # noqa: BLE001 — receipt bookkeeping must never mask the original fault
             pass
         H.discard(repo, wt)
@@ -642,11 +683,21 @@ def main():
                     help="opt-in: reuse a prior accepted patch+receipt on an EXACT fingerprint match (skips the model)")
     ap.add_argument("--no-route", action="store_true",
                     help="disable ECP route auto-select (kill-switch; same as SEIF_NO_ROUTE=1)")
+    ap.add_argument("--protected", action="append", default=None, metavar="PATTERN",
+                    help="founder-approved protected-set override for tasks that legitimately add/edit tests: "
+                         "repeatable; each use supplies one protected path (same vocabulary as the default "
+                         "PROTECTED tuple: dir prefixes ending in '/', fnmatch globs, exact paths). Given at "
+                         "least once, the supplied set REPLACES the default PROTECTED tuple; absent, the "
+                         "default applies unchanged. Gate-bypass sentinels stay enforced regardless "
+                         "(integrity_guard enforces them unconditionally).")
     a = ap.parse_args()
     # auto-select is the default (route=None). --no-route flips the kill-switch (route=False).
+    kw = {}
+    if a.protected is not None:
+        kw["protected"] = tuple(a.protected)
     r = seif_run(a.repo, a.task, a.test_cmd, budget=a.budget, base=a.base, timeout=a.timeout,
                  make_pr=not a.no_pr, model=a.model, route=False if a.no_route else None,
-                 result_cache=(True if a.result_cache else None))
+                 result_cache=(True if a.result_cache else None), **kw)
     sys.exit(0 if r["accepted"] else 1)
 
 
