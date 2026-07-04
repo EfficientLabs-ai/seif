@@ -191,6 +191,26 @@ class SeifRunErrorReceiptTest(unittest.TestCase):
         self.assertEqual(len(recs), 1, "exactly ONE receipt — an interrupt during the has_remote check must not mint a second, contradictory ABORT receipt")
         self.assertEqual(recs[0]["final_outcome"], "ACCEPTED_PR")
 
+    def test_has_remote_called_exactly_once_per_run(self):
+        # Codex, round 3, closed: round 2's fix wrapped the FIRST _has_remote(repo) call in the new outer
+        # try/except but missed a SECOND, pre-existing call four lines later (in the `where=` status-string
+        # line) that sat entirely OUTSIDE that block — an interrupt there still escaped to the outer
+        # discard-and-double-receipt handler, reproduced empirically against that commit. The actual fix is
+        # to call _has_remote(repo) ONCE and cache the result, eliminating the second call site rather than
+        # adding yet another handler around it. This test locks in that invariant directly: if a future
+        # change reintroduces a second call, this fails immediately instead of requiring another
+        # adversarial repro to notice a second exposed call site.
+        def fix(wt, *a, **k):
+            open(os.path.join(wt, "calc.py"), "w").write("def add(a, b):\n    return a + b\n")
+            return 0, SR.UM.empty()
+
+        with mock.patch.object(SR, "_claude_edit", side_effect=fix):
+            with mock.patch.object(SR, "_has_remote", wraps=SR._has_remote) as spy:
+                result = SR.seif_run(self.repo, "task", self.cmd, budget=1, make_pr=True, route=False)
+
+        self.assertTrue(result["accepted"], result)
+        self.assertEqual(spy.call_count, 1, "_has_remote(repo) must be called exactly once per run — a second call site is exactly the bug class fixed across rounds 2 and 3")
+
 
 if __name__ == "__main__":
     unittest.main()

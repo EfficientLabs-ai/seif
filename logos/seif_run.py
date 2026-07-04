@@ -582,6 +582,7 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
         # discard-and-double-receipt handler. One outer BaseException catch covers the whole region rather
         # than patching individual call sites, so this class of bug can't resurface as the block grows.
         pr_url, landed = None, False
+        has_remote = False  # safe default if the try below raises before this is ever assigned
         try:
             # OPT-IN result cache: store this VERIFIED result under its exact fingerprint so an IDENTICAL
             # re-run (same task/base/test/files/model/flags) reuses this patch + receipt and skips the
@@ -593,8 +594,15 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                                  extra={"branch": branch, "checkpoint_id": (checkpoint or {}).get("id")})
                 except Exception as e:  # noqa: BLE001
                     sys.stderr.write(f"[/seif] result-cache store skipped (error: {e!r})\n")
+            # _has_remote(repo) is called ONCE and cached (Codex, round 3, closed): a second call further
+            # below, purely to compute the human-readable `where` string, used to sit OUTSIDE this try
+            # block entirely — an interrupt landing in THAT unguarded call still reached the outer
+            # discard-and-double-receipt handler even after round 2 widened everything else. Eliminating
+            # the second call (rather than wrapping it in yet another handler) removes the exposure
+            # entirely instead of relying on catching up with every call site individually.
+            has_remote = _has_remote(repo)
             # honest landing state: 'accepted' = tests passed (true regardless); 'landed' = push+PR actually succeeded.
-            if make_pr and _has_remote(repo):
+            if make_pr and has_remote:
                 push = subprocess.run(["git", "-C", wt, "push", "-q", "-u", "origin", branch], capture_output=True, text=True)
                 if push.returncode != 0:
                     pr_url = f"(push failed rc={push.returncode}: {push.stderr[-160:]})"
@@ -631,7 +639,7 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
             # the outer discard-and-double-receipt handler, whether it's a push/gh hiccup, an operator
             # abort, or a failure in the cache-store/has_remote steps this catch now also covers.
             pr_url = f"(post-accept step failed or interrupted, branch and receipt are safe: {e!r})"
-        where = pr_url or ("local branch only (no remote)" if not make_pr or not _has_remote(repo) else None)
+        where = pr_url or ("local branch only (no remote)" if not make_pr or not has_remote else None)
         cp_id = (checkpoint or {}).get("id")
         print(f"[/seif] VERIFIED ✓  branch={branch}  landed={landed}  where={where}  "
               f"receipt h={rec.get('h')}  checkpoint={cp_id}")
