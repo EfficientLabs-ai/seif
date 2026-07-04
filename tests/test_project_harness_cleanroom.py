@@ -18,10 +18,13 @@ class CleanRoomBypassTest(unittest.TestCase):
         open(os.path.join(self.repo, "src.py"), "w").write("x = 1\n")
         g("add", "-A"); g("commit", "-qm", "base")
         self.wt = None
+        self._orig_receipts = H.RECEIPTS
+        H.RECEIPTS = os.path.join(self.repo, "receipts.jsonl")
 
     def tearDown(self):
         if self.wt:
             H.discard(self.repo, self.wt)
+        H.RECEIPTS = self._orig_receipts
 
     def test_bypass_present_but_never_staged(self):
         self.wt = H.checkpoint(self.repo, link_deps=False)

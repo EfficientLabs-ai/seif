@@ -70,6 +70,8 @@ class ResolveBaseTest(unittest.TestCase):
         self._commit("def add(a, b):\n    return a + b\ndef sub(a, b):\n    return a - b\n", "c2")
         seen = {}
         orig_ckpt, orig_edit = SR.H.checkpoint, SR._claude_edit
+        orig_receipts = SR.H.RECEIPTS
+        SR.H.RECEIPTS = os.path.join(self.tmp, "receipts.jsonl")
         try:
             def spy_checkpoint(repo, base="HEAD", **kw):
                 seen["base"] = base
@@ -81,6 +83,7 @@ class ResolveBaseTest(unittest.TestCase):
             self.assertEqual(seen.get("base"), self.c1, "clean-room must use the resolved checkpoint commit")
         finally:
             SR.H.checkpoint, SR._claude_edit = orig_ckpt, orig_edit
+            SR.H.RECEIPTS = orig_receipts
 
 
 if __name__ == "__main__":
