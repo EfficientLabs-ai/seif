@@ -178,6 +178,22 @@ class ControllerTest(unittest.TestCase):
         ctrl.run()
         self.assertEqual(ctrl.founder_queue(), [], "no landed PR → no queue file → empty list, no crash")
 
+    def test_founder_queue_skips_annotation_records(self):
+        # Codex P2, closed: founder_queue_annotate.py appends {"type": "annotation", ...} lines to this
+        # SAME file. Controller.founder_queue() is the only production reader — it must not surface an
+        # annotation as if it were a queued PR (no task_id/action/accepted/landed on that record).
+        ctrl = self._ctrl([self._task("t_ok", "ACCEPT")])
+        ctrl.run()
+        self.assertEqual(len(ctrl.founder_queue()), 1, "sanity: one real entry before annotating")
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "logos"))
+        import founder_queue_annotate as FQA  # noqa: E402 (import here — optional module, keep test-local)
+        FQA.annotate(self.qpath, {"task_id": "t_ok"}, "fixture bleed from another suite", kind="fixture")
+        queued = ctrl.founder_queue()
+        self.assertEqual(len(queued), 1, "the annotation record must NOT appear as a second queue entry")
+        self.assertEqual(queued[0]["task_id"], "t_ok", "the real entry is untouched and still present")
+        for rec in queued:
+            self.assertNotEqual(rec.get("type"), "annotation")
+
     # -- route table + the two-plane wiring ------------------------------------
     def test_load_real_route_table(self):
         routes, warnings = C.load_route_table()

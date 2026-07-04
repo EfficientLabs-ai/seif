@@ -233,7 +233,13 @@ class Controller:
         return summary
 
     def founder_queue(self, queue_path=None):
-        """Read back what is queued for the founder (accepted + landed PRs). Never merges — read-only."""
+        """Read back what is queued for the founder (accepted + landed PRs). Never merges — read-only.
+
+        SKIPS annotation records (Codex P2, closed): founder_queue_annotate.py appends
+        {"type": "annotation", ...} lines to this same file to flag fixture noise without rewriting
+        history. This is the only production reader of the file, so it must not surface those records
+        as if they were queued PRs — they carry no task_id/action/accepted/landed and would corrupt the
+        founder-facing view. Annotation consumers that need the join use founder_queue_annotate.read_queue()."""
         path = queue_path or self.queue_path or SL.FOUNDER_QUEUE
         if not os.path.exists(path):
             return []
@@ -243,9 +249,12 @@ class Controller:
                 line = line.strip()
                 if line:
                     try:
-                        out.append(json.loads(line))
+                        rec = json.loads(line)
                     except Exception:  # noqa: BLE001 — a corrupt line shouldn't hide the rest of the queue
                         continue
+                    if isinstance(rec, dict) and rec.get("type") == "annotation":
+                        continue
+                    out.append(rec)
         return out
 
 

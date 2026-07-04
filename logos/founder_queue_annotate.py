@@ -40,11 +40,17 @@ def _matches(entry, match):
 def annotate(queue_path, match, reason, kind="fixture"):
     """Append ONE annotation record to queue_path: {"type": "annotation", "kind", "reason", "match",
     "ts"}. Raises ValueError if `match` matches ZERO existing non-annotation entries — an annotation
-    must reference something real. Only ever opens the file in append mode."""
-    found = any(rec.get("type") != "annotation" and _matches(rec, match)
-                for rec in _read_records(queue_path))
-    if not found:
+    must reference something real — or if it matches MORE THAN ONE (Codex P2, closed: an ambiguous
+    match, e.g. --task-id alone against retried/re-queued entries sharing that id, would silently apply
+    the SAME fixture annotation to every match via read_queue()'s join, hiding entries the caller never
+    intended to touch). Only ever opens the file in append mode."""
+    matched = [rec for rec in _read_records(queue_path) if rec.get("type") != "annotation" and _matches(rec, match)]
+    if not matched:
         raise ValueError(f"no queue entry in {queue_path} matches {match!r}")
+    if len(matched) > 1:
+        raise ValueError(
+            f"{match!r} matches {len(matched)} queue entries in {queue_path} — ambiguous; "
+            f"narrow the match (e.g. add --queued-at) so it identifies exactly one entry")
     record = {
         "type": "annotation",
         "kind": kind,

@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "logos"))
 import project_harness as H  # noqa: E402
@@ -53,6 +54,20 @@ class SeifTmpdirTest(unittest.TestCase):
             self.assertTrue(os.path.isdir(self.wt), "checkpoint must still succeed via system-default fallback")
         finally:
             os.unlink(blocker.name)
+
+    def test_toctou_mkdtemp_failure_after_seif_tmpdir_check_falls_back(self):
+        # Codex Minor, closed: _seif_tmpdir()'s own os.makedirs() check can succeed and the directory
+        # still be gone/unwritable by the time tempfile.mkdtemp() actually tries to create inside it
+        # (removed, quota hit, permissions changed in between). checkpoint() must degrade to mkdtemp's
+        # system default, not crash the gate — the docstring's "degrade, never crash" promise covers
+        # this window too, not just _seif_tmpdir()'s own pre-check.
+        vanished = tempfile.mkdtemp(prefix="t-vanish-")
+        os.rmdir(vanished)  # exists at the moment _seif_tmpdir() would return it, gone by mkdtemp() time
+        with patch.object(H, "_seif_tmpdir", return_value=vanished):
+            self.wt = H.checkpoint(self.repo, link_deps=False)
+        self.assertTrue(os.path.isdir(self.wt), "checkpoint must still succeed via system-default fallback")
+        self.assertFalse(os.path.realpath(self.wt).startswith(os.path.realpath(vanished)),
+                          "the worktree must NOT be under the vanished dir — it degraded to the system default")
 
     def test_worktree_is_functional_git_worktree(self):
         self.wt = H.checkpoint(self.repo, link_deps=False)

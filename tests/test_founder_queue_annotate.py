@@ -58,6 +58,34 @@ class FounderQueueAnnotateTest(unittest.TestCase):
             FQA.annotate(missing, {"task_id": "t_ok"}, "bogus")
         self.assertFalse(os.path.exists(missing))
 
+    def test_annotate_ambiguous_match_raises_and_writes_nothing(self):
+        # Codex P2, closed: a retried/re-queued task can legitimately appear twice with the SAME
+        # task_id but different queued_at. Matching on --task-id alone must not silently apply one
+        # fixture annotation to every entry that shares it.
+        retry = {"task_id": "t_ok", "queued_at": "2026-06-29T12:00:00Z", "accepted": True,
+                 "landed": True, "action": "review+merge (founder gate)"}
+        with open(self.qpath, "a") as f:
+            f.write(json.dumps(retry) + "\n")
+        with open(self.qpath, "rb") as f:
+            before = f.read()
+        with self.assertRaises(ValueError):
+            FQA.annotate(self.qpath, {"task_id": "t_ok"}, "ambiguous — should be rejected")
+        with open(self.qpath, "rb") as f:
+            self.assertEqual(f.read(), before, "an ambiguous (rejected) annotate() must write nothing")
+
+    def test_annotate_unambiguous_match_after_narrowing_succeeds(self):
+        # The same scenario as above, but narrowed with --queued-at → exactly one match → succeeds,
+        # and only THAT entry is annotated (the other same-task_id entry is untouched).
+        retry = {"task_id": "t_ok", "queued_at": "2026-06-29T12:00:00Z", "accepted": True,
+                 "landed": True, "action": "review+merge (founder gate)"}
+        with open(self.qpath, "a") as f:
+            f.write(json.dumps(retry) + "\n")
+        FQA.annotate(self.qpath, {"task_id": "t_ok", "queued_at": ENTRY_1["queued_at"]}, "narrowed, unambiguous")
+        entries = {(e["task_id"], e["queued_at"]): e for e in FQA.read_queue(self.qpath)}
+        self.assertEqual(len(entries[("t_ok", ENTRY_1["queued_at"])]["_annotations"]), 1)
+        self.assertEqual(entries[("t_ok", retry["queued_at"])]["_annotations"], [],
+                          "the OTHER same-task_id entry must be untouched by the narrowed annotation")
+
     # -- read_queue: attaches annotations, filters fixtures ----------------------
     def test_read_queue_attaches_annotations_to_the_right_entry(self):
         FQA.annotate(self.qpath, {"task_id": "t_ok", "queued_at": ENTRY_1["queued_at"]},

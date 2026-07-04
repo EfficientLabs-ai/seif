@@ -59,7 +59,14 @@ def checkpoint(repo, base="HEAD", link_deps=True):
     bugs but aren't. We symlink those dep dirs from the source repo (read-only during tests) so the
     clean room reflects the repo's actual runnable state. (Discovered dogfooding StratosAgent: its
     14/14 suites "failed" in a bare worktree purely because node_modules was missing.)"""
-    wt = tempfile.mkdtemp(prefix="seif-wt-", dir=_seif_tmpdir())
+    try:
+        wt = tempfile.mkdtemp(prefix="seif-wt-", dir=_seif_tmpdir())
+    except OSError:
+        # TOCTOU (Codex Minor, closed): _seif_tmpdir()'s own os.makedirs() check can succeed and the
+        # directory still be gone/unwritable/quota-exceeded by the time mkdtemp() actually tries to
+        # create inside it. Degrade to mkdtemp's system-default location rather than crashing the gate —
+        # the same promise _seif_tmpdir()'s docstring already makes for its own pre-check failure.
+        wt = tempfile.mkdtemp(prefix="seif-wt-")
     subprocess.run(["git", "-C", repo, "worktree", "add", "--quiet", "--detach", wt, base], check=True)
     # The clean room is a CONTROLLED, separately-gated environment (its verdict is the project's test suite,
     # not the interactive Stop hook). Pre-place the Stop-hook bypass so the nested editor sub-agent isn't
