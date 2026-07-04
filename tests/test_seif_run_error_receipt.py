@@ -100,6 +100,55 @@ class SeifRunErrorReceiptTest(unittest.TestCase):
         rec = recs[-1]
         self.assertEqual(rec["final_outcome"], "ABORT")
 
+    def test_abort_during_checkpoint_creation_mints_abort_receipt(self):
+        # Codex, closed: the checkpoint try/except previously caught only Exception, so an operator abort
+        # landing during clean-room creation itself — the exact scenario this PR's title claims to close —
+        # left ZERO receipts (worse than the plain-Exception case above, which was already fixed once).
+        with mock.patch.object(SR.H, "checkpoint", side_effect=KeyboardInterrupt()):
+            with self.assertRaises(KeyboardInterrupt):
+                SR.seif_run(self.repo, "task", "true", budget=1, make_pr=False)
+        recs = self._receipts()
+        self.assertEqual(len(recs), 1, "exactly one receipt must be appended")
+        rec = recs[0]
+        self.assertEqual(rec["final_outcome"], "ABORT", "an interrupt is ABORT, not ERROR — same distinction the outer handler already makes")
+        self.assertIn("clean-room checkpoint failed", rec["evidence_result"])
+
+    def test_late_abort_after_accepted_receipt_does_not_mint_contradictory_second_receipt(self):
+        # Codex P1, closed: an operator abort (or any error) during the POST-accept, best-effort PR-push
+        # step previously escaped to the outer `except BaseException`, which minted a SECOND, contradictory
+        # ABORT receipt on top of the just-written ACCEPTED_PR one and discarded the worktree — directly
+        # violating this segment's own "best-effort and ISOLATED... must NEVER reach the outer discard"
+        # contract. It must now be handled locally: exactly one receipt (ACCEPTED_PR), no re-raise, the
+        # worktree survives, and seif_run returns its normal accepted result.
+        bare = os.path.join(self.tmp, "origin.git")
+        subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
+        subprocess.run(["git", "-C", self.repo, "remote", "add", "origin", bare], check=True)
+
+        def fix(wt, *a, **k):
+            open(os.path.join(wt, "calc.py"), "w").write("def add(a, b):\n    return a + b\n")
+            return 0, SR.UM.empty()
+
+        real_run = subprocess.run
+
+        def push_interrupts(cmd, *a, **k):
+            if isinstance(cmd, list) and "push" in cmd:
+                raise KeyboardInterrupt()
+            return real_run(cmd, *a, **k)
+
+        with mock.patch.object(SR, "_claude_edit", side_effect=fix):
+            with mock.patch.object(SR.subprocess, "run", side_effect=push_interrupts):
+                result = SR.seif_run(self.repo, "task", self.cmd, budget=1, make_pr=True, route=False)
+
+        self.assertTrue(result["accepted"], result)
+        self.assertTrue(result.get("landed") is False)
+        self.assertIn("branch and receipt are safe", result.get("pr") or "")
+        recs = self._receipts()
+        self.assertEqual(len(recs), 1, "exactly ONE receipt — no second, contradictory ABORT receipt on top of ACCEPTED_PR")
+        self.assertEqual(recs[0]["final_outcome"], "ACCEPTED_PR")
+        wt_list = subprocess.run(["git", "-C", self.repo, "worktree", "list"],
+                                 capture_output=True, text=True).stdout.strip().splitlines()
+        self.assertEqual(len(wt_list), 2, "the worktree must NOT be discarded — the accepted work survives (main + the accepted worktree)")
+
 
 if __name__ == "__main__":
     unittest.main()

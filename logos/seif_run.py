@@ -399,7 +399,11 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
             # so the changed-file set is empty here by construction (exact + conservative).
             changed_hashes = RC.changed_file_hashes(repo, [])
             cache_fp = (task, base_commit, test_cmd, changed_hashes, model, lean_flags)
-            hit = rcache.lookup(*cache_fp)
+            # `protected` is passed as a separate keyword, not folded into cache_fp (Codex P2, closed):
+            # a patch accepted under a RELAXED --protected override must never be replayed for an
+            # identical task/base/test/model/flags run under the STRICT default set — the cache-hit path
+            # below never re-runs IG.is_clean, so the protected set MUST be part of the key.
+            hit = rcache.lookup(*cache_fp, protected=protected)
             if hit is not None:
                 print(f"[/seif] RESULT-CACHE HIT (backend={rcache.backend}) — reusing prior accepted patch "
                       f"+ receipt; SKIP model call. receipt h={(hit.get('receipt') or {}).get('h')}")
@@ -420,15 +424,18 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
     # BEFORE the clean room so a checkpoint failure below can still mint a (empty-spend) receipt.
     try:
         wt = H.checkpoint(repo, base)
-    except Exception as e:  # noqa: BLE001 — clean-room creation itself failed (tmpfs exhaustion, bad base
-        # ref, git failure): no worktree exists yet, so there's nothing to discard, but the ERROR
+    except BaseException as e:  # noqa: BLE001 — clean-room creation itself failed (tmpfs exhaustion, bad
+        # base ref, git failure) OR an operator abort (KeyboardInterrupt/SystemExit) landed during it —
+        # catching only Exception here left THIS exact scenario un-receipted, the one the PR title claims
+        # to close (Codex, closed). No worktree exists yet, so there's nothing to discard, but the
         # disposition must still be receipted — this was the last un-receipted terminal path in the gate.
+        final_outcome = "ERROR" if isinstance(e, Exception) else "ABORT"
         try:
             H._receipt(repo, task, test_cmd, {"outcome": "error", "exit_code": None}, "", usage=spend,
                        metering={"attempt_number": 0, "empty_response_retries": 0, "checkpoint_id": None,
                                  "route_id_selected": route_id_selected,
                                  "evidence_result": f"clean-room checkpoint failed: {type(e).__name__}: {str(e)[:200]}",
-                                 "final_outcome": "ERROR"})
+                                 "final_outcome": final_outcome})
         except Exception:  # noqa: BLE001 — receipt bookkeeping must never mask the original fault
             pass
         raise
@@ -571,7 +578,7 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
         # and ISOLATED — a cache write must NEVER reach the outer discard or alter the verified landing.
         if rcache is not None and cache_fp is not None:
             try:
-                rcache.store(*cache_fp, patch=patch, receipt=rec,
+                rcache.store(*cache_fp, protected=protected, patch=patch, receipt=rec,
                              extra={"branch": branch, "checkpoint_id": (checkpoint or {}).get("id")})
             except Exception as e:  # noqa: BLE001
                 sys.stderr.write(f"[/seif] result-cache store skipped (error: {e!r})\n")
@@ -613,8 +620,17 @@ def seif_run(repo, task, test_cmd, budget=3, base="HEAD", timeout=600, make_pr=T
                         pr_url, landed = pr.stdout.strip(), True
                     else:
                         pr_url = f"(branch pushed; pr create rc={pr.returncode}: {pr.stderr[-160:]})"
-            except Exception as e:  # noqa: BLE001 — never lose a VERIFIED branch over a PR-submission error
-                pr_url = f"(pr submission error, branch is safe: {e!r})"
+            except BaseException as e:  # noqa: BLE001 — never lose a VERIFIED branch over a PR-submission
+                # error OR an operator abort (Codex P1, closed): this segment runs AFTER the ACCEPTED_PR
+                # receipt is already minted above, so an interrupt landing here must NOT escape to the
+                # outer `except BaseException` — that handler mints a SECOND, contradictory ABORT receipt
+                # on top of the just-written ACCEPTED_PR one and calls H.discard(repo, wt), directly
+                # violating this segment's own "best-effort and ISOLATED... must NEVER reach the outer
+                # discard" contract. Catching BaseException HERE (identical handling to any other
+                # exception in this block: recorded, not fatal, falls through to the normal accepted
+                # return below) closes that window — matches the outer handler's own reasoning for why it
+                # catches BaseException, applied to the segment that actually needed it.
+                pr_url = f"(pr submission error or interrupted, branch and receipt are safe: {e!r})"
         where = pr_url or ("local branch only (no remote)" if not make_pr or not _has_remote(repo) else None)
         cp_id = (checkpoint or {}).get("id")
         print(f"[/seif] VERIFIED ✓  branch={branch}  landed={landed}  where={where}  "
